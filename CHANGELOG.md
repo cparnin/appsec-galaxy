@@ -26,6 +26,13 @@ semantic versioning.
   `APPSEC_WEB_API_KEY`/`APPSEC_WEB_CORS_ORIGINS`, MCP timeouts) and removed
   the dead `APPSEC_AI_SCAN_MIN_CONFIDENCE` example.
 - Cleared all mypy errors across the codebase; the CI mypy gate is blocking.
+- Restored the web UI brandmark backdrop with a new AppSec Galaxy galaxy mark
+  (`images/appsec-galaxy-mark.svg`); the old template still pointed at the
+  removed legacy image, so no backdrop rendered.
+- The AI scanner now logs a warning naming `APPSEC_AI_SCAN_MAX_FILES` and the
+  skipped-file count whenever the relevance-ranked file cap drops candidates.
+- Rewrote `CLAUDE.md` as a full operating manual (standing rules, modes,
+  provider boundary, commands, troubleshooting).
 
 ### Fixed
 

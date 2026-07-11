@@ -471,6 +471,14 @@ def _select_security_files(repo_path: Path, max_files: int = 50) -> list[dict[st
 
     # Take top N files
     selected = candidates[:max_files]
+    skipped = len(candidates) - len(selected)
+    if skipped > 0:
+        logger.warning(
+            f"AI scanner: file cap reached; skipping {skipped} lower-relevance "
+            f"candidate(s) (APPSEC_AI_SCAN_MAX_FILES={max_files}). The highest-"
+            f"scoring security-relevant files are kept; raise the cap for "
+            f"fuller coverage."
+        )
 
     # Read file contents
     for entry in selected:
