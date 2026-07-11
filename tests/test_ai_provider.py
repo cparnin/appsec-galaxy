@@ -149,6 +149,28 @@ def test_missing_key_error_is_actionable(monkeypatch):
     assert "env.example" in message
 
 
+@pytest.mark.parametrize(
+    ("provider", "key_env", "placeholder"),
+    [
+        ("openai", "OPENAI_API_KEY", "your-openai-api-key-here"),
+        ("anthropic", "ANTHROPIC_API_KEY", "your-anthropic-api-key-here"),
+    ],
+)
+def test_placeholder_key_counts_as_unset(monkeypatch, provider, key_env, placeholder):
+    monkeypatch.setenv("AI_PROVIDER", provider)
+    monkeypatch.setenv(key_env, placeholder)
+
+    assert ai_scanner.api_key_present(provider) is False
+    with pytest.raises(ValueError, match="env.example placeholder"):
+        ai_scanner._get_ai_client()
+
+
+def test_real_key_counts_as_present(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-value")
+    assert ai_scanner.api_key_present("openai") is True
+    assert ai_scanner.api_key_present("anthropic") is False
+
+
 # ---------------------------------------------------------------------------
 # Client construction and caching
 # ---------------------------------------------------------------------------

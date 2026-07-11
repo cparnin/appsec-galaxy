@@ -344,6 +344,22 @@ def test_environment_validation_requires_openai_key_for_ai_features(monkeypatch,
         validate_environment_config()
 
 
+def test_environment_validation_rejects_placeholder_key_for_ai_features(monkeypatch):
+    monkeypatch.setenv("APPSEC_AI_SCAN", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "your-openai-api-key-here")
+
+    with pytest.raises(ValueError, match="OPENAI_API_KEY is required"):
+        validate_environment_config()
+
+
+def test_environment_validation_placeholder_key_reads_as_absent(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "your-openai-api-key-here")
+
+    config = validate_environment_config()
+
+    assert config["ai_api_key"] is False
+
+
 @pytest.mark.parametrize("feature", ["APPSEC_AI_SCAN", "APPSEC_AUTO_FIX"])
 def test_environment_validation_requires_anthropic_key_when_selected(monkeypatch, feature):
     monkeypatch.setenv("AI_PROVIDER", "anthropic")

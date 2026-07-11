@@ -265,7 +265,9 @@ def validate_environment_config() -> dict[str, Any]:
     # If we want them honored, the fix is to plumb them into the scanner
     # calls, not to re-add the dead validation.
 
-    from appsec_galaxy.scanners.ai_scanner import PROVIDER_KEY_ENV, _get_ai_provider
+    from appsec_galaxy.scanners.ai_scanner import (
+        PROVIDER_KEY_ENV, _get_ai_provider, api_key_present,
+    )
 
     ai_provider = _get_ai_provider()
     config['ai_provider'] = ai_provider
@@ -290,10 +292,11 @@ def validate_environment_config() -> dict[str, Any]:
 
     # Record key presence without retaining or logging its value. The key
     # env var depends on the configured provider (OPENAI_API_KEY or
-    # ANTHROPIC_API_KEY).
+    # ANTHROPIC_API_KEY); env.example placeholders count as unset.
     key_env = PROVIDER_KEY_ENV[ai_provider]
     key_value = os.getenv(key_env, '').strip()
-    config['ai_api_key'] = bool(key_value)
+    key_present = api_key_present(ai_provider)
+    config['ai_api_key'] = key_present
     if key_value and ('\n' in key_value or '\r' in key_value):
         raise ValueError(f"{key_env} contains invalid characters")
 
@@ -303,7 +306,7 @@ def validate_environment_config() -> dict[str, Any]:
         or os.getenv('APPSEC_AUTO_FIX', 'false').lower() == 'true'
         or auto_fix_mode in {'1', '2', '3'}
     )
-    if ai_required and not key_value:
+    if ai_required and not key_present:
         raise ValueError(
             f"{key_env} is required when AI scanning or auto-remediation is "
             f"enabled (AI_PROVIDER={ai_provider})"
@@ -1106,6 +1109,7 @@ def select_ai_provider() -> str | None:
     from appsec_galaxy.scanners.ai_scanner import (
         PROVIDER_KEY_ENV,
         SUPPORTED_PROVIDERS,
+        api_key_present,
         get_default_model,
         reset_ai_client_cache,
         test_ai_connection,
@@ -1120,7 +1124,7 @@ def select_ai_provider() -> str | None:
         print("\n🤖 Select AI provider:")
         for i, provider in enumerate(SUPPORTED_PROVIDERS, 1):
             key_env = PROVIDER_KEY_ENV[provider]
-            key_status = "key set ✓" if os.getenv(key_env, '').strip() else f"{key_env} not set ✗"
+            key_status = "key set ✓" if api_key_present(provider) else f"{key_env} not set ✗"
             default_marker = " (current)" if provider == current else ""
             print(f"   [{i}] {display_names.get(provider, provider)}{default_marker} — "
                   f"default model {get_default_model(provider)} — {key_status}")
@@ -1142,9 +1146,10 @@ def select_ai_provider() -> str | None:
             continue
 
         key_env = PROVIDER_KEY_ENV[provider]
-        if not os.getenv(key_env, '').strip():
-            print(f"\n❌ {key_env} is not set. Add it to your .env "
-                  f"(see env.example) or pick a different provider.")
+        if not api_key_present(provider):
+            print(f"\n❌ {key_env} is not set (or is still the env.example "
+                  f"placeholder). Add your real key to .env or pick a "
+                  f"different provider.")
             current = provider
             continue
 
@@ -1284,12 +1289,9 @@ def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], 
             # and reachable before doing any git work. Skipped if the AI
             # scanner already validated the provider earlier in this run.
             if choice != '4':
-                from appsec_galaxy.scanners.ai_scanner import PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS
+                from appsec_galaxy.scanners.ai_scanner import SUPPORTED_PROVIDERS, api_key_present
                 provider = os.getenv('AI_PROVIDER', '').strip().lower() or 'openai'
-                key_ready = (
-                    provider in SUPPORTED_PROVIDERS
-                    and bool(os.getenv(PROVIDER_KEY_ENV[provider], '').strip())
-                )
+                key_ready = provider in SUPPORTED_PROVIDERS and api_key_present(provider)
                 if not key_ready and select_ai_provider() is None:
                     print("⚠️  Skipping auto-fix (no working AI provider)")
                     choice = '4'

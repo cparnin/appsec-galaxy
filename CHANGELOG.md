@@ -33,6 +33,11 @@ semantic versioning.
   skipped-file count whenever the relevance-ranked file cap drops candidates.
 - Rewrote `CLAUDE.md` as a full operating manual (standing rules, modes,
   provider boundary, commands, troubleshooting).
+- API-key presence checks (CLI picker, web config/scan, startup validation)
+  now treat env.example placeholder values (`your-...-here`) as unset, with
+  a distinct "still the placeholder" error from the client builder.
+- `env.example` now ships `APPSEC_AI_SCAN=false` so a copied example never
+  enables AI spend by default (matches the code default).
 
 ### Fixed
 

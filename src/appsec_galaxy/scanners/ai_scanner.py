@@ -65,6 +65,20 @@ PROVIDER_KEY_ENV = {
     'anthropic': 'ANTHROPIC_API_KEY',
 }
 
+# env.example ships placeholder values like "your-openai-api-key-here".
+# A copied-but-unedited .env must read as "no key", not "key set".
+_PLACEHOLDER_KEY_RE = re.compile(r'^your-[a-z0-9-]+-here$', re.IGNORECASE)
+
+
+def api_key_present(provider: str) -> bool:
+    """True when the provider's key env var holds a real-looking value.
+
+    Empty, whitespace, and env.example placeholders all count as unset.
+    Never returns or logs the value itself.
+    """
+    value = os.getenv(PROVIDER_KEY_ENV[provider], '').strip()
+    return bool(value) and not _PLACEHOLDER_KEY_RE.match(value)
+
 # Per-provider model mapping for each scan depth. Users can override these
 # defaults globally with AI_MODEL or specifically for scanning with
 # APPSEC_AI_SCAN_MODEL.
@@ -204,6 +218,11 @@ def _require_api_key(provider: str) -> str:
     """Return the provider's API key, or raise with a setup-oriented message."""
     key_env = PROVIDER_KEY_ENV[provider]
     api_key = os.getenv(key_env, '').strip()
+    if api_key and _PLACEHOLDER_KEY_RE.match(api_key):
+        raise ValueError(
+            f"{key_env} is still the env.example placeholder. "
+            f"Replace it with your real key in .env."
+        )
     if not api_key:
         raise ValueError(
             f"AI_PROVIDER={provider} but {key_env} is not set. "

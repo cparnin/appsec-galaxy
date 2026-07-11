@@ -145,12 +145,13 @@ def health_check():
 def get_config():
     """Get current scanner configuration."""
     from appsec_galaxy.scanners.ai_scanner import (
-        PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, get_default_model,
+        PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, api_key_present, get_default_model,
     )
 
     try:
         config = init_web_config()
-        # Return safe config info (key presence only, never key values)
+        # Return safe config info (key presence only, never key values;
+        # env.example placeholders count as unset)
         safe_config = {
             'ai_provider': config.get('ai_provider'),
             'ai_providers': [
@@ -158,7 +159,7 @@ def get_config():
                     'name': provider,
                     'default_model': get_default_model(provider),
                     'key_env': PROVIDER_KEY_ENV[provider],
-                    'key_set': bool(os.getenv(PROVIDER_KEY_ENV[provider], '').strip()),
+                    'key_set': api_key_present(provider),
                 }
                 for provider in SUPPORTED_PROVIDERS
             ],
@@ -212,8 +213,8 @@ def scan_repository():
         # misconfiguration fails fast with a clear message instead of half
         # way through a scan.
         from appsec_galaxy.scanners.ai_scanner import (
-            PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, reset_ai_client_cache,
-            test_ai_connection,
+            PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, api_key_present,
+            reset_ai_client_cache, test_ai_connection,
         )
 
         if requested_provider and requested_provider not in SUPPORTED_PROVIDERS:
@@ -248,12 +249,13 @@ def scan_repository():
         if ai_requested:
             active_provider = (os.getenv('AI_PROVIDER', '') or 'openai').strip().lower() or 'openai'
             key_env = PROVIDER_KEY_ENV.get(active_provider)
-            if key_env and not os.getenv(key_env, '').strip():
+            if key_env and not api_key_present(active_provider):
                 _restore_env('AI_PROVIDER', original_ai_provider)
                 reset_ai_client_cache()
                 return jsonify({
-                    'error': f"{key_env} is not set. Add it to your .env "
-                             f"(see env.example) or choose a different AI provider."
+                    'error': f"{key_env} is not set (or is still the env.example "
+                             f"placeholder). Add your real key to .env or choose "
+                             f"a different AI provider."
                 }), 400
             ok, message = test_ai_connection()
             if not ok:
