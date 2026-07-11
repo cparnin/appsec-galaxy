@@ -11,7 +11,7 @@ from .validation import validate_binary_path, validate_repo_path
 
 logger = logging.getLogger(__name__)
 
-def run_gitleaks(repo_path: str, output_dir: Path = None) -> list:
+def run_gitleaks(repo_path: str, output_dir: Path | None = None) -> list:
     """
     Run Gitleaks scanner on the given repository path.
     Returns a list of findings in standardized format.

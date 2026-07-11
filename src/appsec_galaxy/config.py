@@ -159,7 +159,7 @@ AI_SCAN_MIN_CONFIDENCE = 0.7
 # Parse APPSEC_TOOLS environment variable
 # Format: comma-separated list (e.g., "semgrep,gitleaks,trivy")
 # Valid options: semgrep, trivy, gitleaks, code_quality, sbom, ai_scan, all
-def parse_tool_selection(tools_string: str = None) -> set:
+def parse_tool_selection(tools_string: str | None = None) -> set:
     """
     Parse and validate tool selection from environment or parameter.
 

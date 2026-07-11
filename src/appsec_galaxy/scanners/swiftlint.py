@@ -6,6 +6,7 @@ based on the Swift API Design Guidelines.
 """
 
 from pathlib import Path
+from typing import Any
 from .quality_scanner_base import QualityScannerBase
 
 
@@ -94,7 +95,7 @@ class SwiftLintScanner(QualityScannerBase):
             self.logger.error(f"Failed to parse {self.display_name} output: {e}")
             return []
 
-    def run_scan(self, repo_path: str, output_dir: str = None) -> list[dict]:
+    def run_scan(self, repo_path: str, output_dir: str | None = None) -> list[dict]:
         """
         Override run_scan to capture stdout since SwiftLint outputs JSON to stdout.
         """
@@ -296,7 +297,7 @@ class SwiftLintScanner(QualityScannerBase):
         else:
             return 'best-practice'
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Extract findings from SwiftLint JSON output."""
         # SwiftLint outputs an array of violations directly
         if isinstance(raw_results, list):
@@ -305,7 +306,7 @@ class SwiftLintScanner(QualityScannerBase):
 
 
 # Export scanner function for main.py
-def run_swiftlint(repo_path: str, output_dir: str = None) -> list:
+def run_swiftlint(repo_path: str, output_dir: str | None = None) -> list:
     """Run SwiftLint quality scan."""
     scanner = SwiftLintScanner()
     return scanner.run_scan(repo_path, output_dir)

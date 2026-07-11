@@ -132,8 +132,8 @@ def _build_findings_digest(findings: list[dict[str, Any]], cross_file_data: dict
     code_quality = [f for f in findings if f.get('extra', {}).get('metadata', {}).get('category') == 'code_quality']
 
     # Count by tool and severity
-    by_tool = {}
-    by_severity = {}
+    by_tool: dict[str, int] = {}
+    by_severity: dict[str, int] = {}
     for f in security:
         tool = f.get('tool', 'unknown')
         sev = f.get('severity', 'unknown').lower()
@@ -187,7 +187,7 @@ def _build_findings_digest(findings: list[dict[str, Any]], cross_file_data: dict
     # Gitleaks summary (don't leak actual secrets into prompt)
     secrets = [f for f in security if f.get('tool') == 'gitleaks']
     if secrets:
-        secret_types = {}
+        secret_types: dict[str, int] = {}
         for s in secrets:
             desc = s.get('extra', {}).get('description', s.get('description', 'unknown'))
             secret_types[desc] = secret_types.get(desc, 0) + 1
@@ -196,7 +196,7 @@ def _build_findings_digest(findings: list[dict[str, Any]], cross_file_data: dict
     # Trivy dep summary
     deps = [f for f in security if f.get('tool') == 'trivy']
     if deps:
-        dep_sevs = {}
+        dep_sevs: dict[str, int] = {}
         for d in deps:
             sev = d.get('severity', 'unknown').lower()
             dep_sevs[sev] = dep_sevs.get(sev, 0) + 1

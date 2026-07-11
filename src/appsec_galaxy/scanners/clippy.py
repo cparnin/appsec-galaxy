@@ -5,6 +5,7 @@ Clippy is the official Rust linter with over 600 lint checks.
 """
 
 from pathlib import Path
+from typing import Any
 from .quality_scanner_base import QualityScannerBase
 
 
@@ -113,7 +114,7 @@ class ClippyScanner(QualityScannerBase):
             }
         }
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Extract findings from Clippy JSON output."""
         # Clippy outputs newline-delimited JSON
         # Each line is a separate JSON object
@@ -133,7 +134,7 @@ class ClippyScanner(QualityScannerBase):
 
 
 # Export scanner function for main.py
-def run_clippy(repo_path: str, output_dir: str = None) -> list:
+def run_clippy(repo_path: str, output_dir: str | None = None) -> list:
     """Run Clippy quality scan."""
     scanner = ClippyScanner()
     return scanner.run_scan(repo_path, output_dir)

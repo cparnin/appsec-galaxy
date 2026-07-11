@@ -107,7 +107,7 @@ def get_changed_files(repo_path: str, base_ref: str | None = None) -> set[str] |
     Includes uncommitted changes. Returns None if the diff cannot be
     computed (not a git repo, missing base ref), so callers fail open.
     """
-    candidates = [base_ref] if base_ref else []
+    candidates: list[str | None] = [base_ref] if base_ref else []
     candidates += [os.getenv('APPSEC_DIFF_BASE', '').strip() or None, 'origin/main', 'origin/master']
     tried = []
     for ref in candidates:

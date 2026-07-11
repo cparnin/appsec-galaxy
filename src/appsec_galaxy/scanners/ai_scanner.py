@@ -420,7 +420,7 @@ def _select_security_files(repo_path: Path, max_files: int = 50) -> list[dict[st
 
     Returns list of dicts with 'path' (relative), 'content', 'relevance_score', 'categories'.
     """
-    candidates = []
+    candidates: list[dict[str, Any]] = []
 
     for file_path in repo_path.rglob('*'):
         if file_path.is_dir():
@@ -855,8 +855,8 @@ def _deduplicate_against_existing(findings: list[dict[str, Any]], output_dir: Pa
     semgrep_file = output_dir / "semgrep.json"
     if semgrep_file.exists():
         try:
-            with open(semgrep_file) as f:
-                semgrep_data = json.load(f)
+            with open(semgrep_file) as fh:
+                semgrep_data = json.load(fh)
             for result in semgrep_data.get('results', []):
                 file_path = result.get('path', '')
                 line = result.get('start', {}).get('line', 0)
@@ -875,8 +875,8 @@ def _deduplicate_against_existing(findings: list[dict[str, Any]], output_dir: Pa
     trivy_file = output_dir / "trivy-sca.json"
     if trivy_file.exists():
         try:
-            with open(trivy_file) as f:
-                trivy_data = json.load(f)
+            with open(trivy_file) as fh:
+                trivy_data = json.load(fh)
             for result in trivy_data.get('Results', []):
                 for vuln in result.get('Vulnerabilities', []):
                     pkg = vuln.get('PkgName', '')
@@ -912,7 +912,7 @@ def _deduplicate_against_existing(findings: list[dict[str, Any]], output_dir: Pa
     return deduped
 
 
-def run_ai_scan(repo_path: str, output_dir: str = None, scan_level: str = None) -> list[dict[str, Any]]:
+def run_ai_scan(repo_path: str, output_dir: str | None = None, scan_level: str | None = None) -> list[dict[str, Any]]:
     """
     Run AI-native security scan on the given repository.
 
@@ -982,7 +982,7 @@ def run_ai_scan(repo_path: str, output_dir: str = None, scan_level: str = None) 
         # Rough estimate: 1 byte ≈ 0.25 tokens, so 400KB of source ≈ 100K tokens
         max_batch_bytes = 350_000  # Leave room for prompt overhead
         batches = []
-        current_batch = []
+        current_batch: list[dict[str, Any]] = []
         current_size = 0
 
         for f in files:
@@ -1061,7 +1061,7 @@ def run_ai_scan(repo_path: str, output_dir: str = None, scan_level: str = None) 
 
         # Step 9: Save raw AI findings to output
         ai_output_file = output_path / "ai_scan.json"
-        with open(ai_output_file, 'w') as f:
+        with open(ai_output_file, 'w') as fh:
             json.dump({
                 'depth': depth,
                 'model': model_id,
@@ -1076,7 +1076,7 @@ def run_ai_scan(repo_path: str, output_dir: str = None, scan_level: str = None) 
                     'estimated_cost_usd': round(total_cost, 4),
                 },
                 'findings': verified_findings,
-            }, f, indent=2)
+            }, fh, indent=2)
 
         elapsed = time.time() - start_time
         logger.info(

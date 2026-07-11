@@ -654,6 +654,14 @@
                             <option value="3">Auto-fix Both (Recommended)</option>
                         </select>
                     </div>
+                    <div class="field">
+                        <label class="field-label" for="aiProvider">AI Provider</label>
+                        <select id="aiProvider" name="aiProvider" title="Used by AI Deep Analysis and auto-remediation. The matching API key must be set in .env.">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                        </select>
+                        <span class="field-help" id="aiProviderHelp"></span>
+                    </div>
                 </div>
             </section>
 
@@ -683,7 +691,7 @@
                         <input type="checkbox" name="tool_sbom" value="sbom" checked>
                         <span>SBOM Generation</span>
                     </label>
-                    <label class="tool-option" title="Uses Claude to find logic errors, auth bypasses, and vulnerabilities that rule-based tools cannot detect. Requires APPSEC_AI_SCAN=true.">
+                    <label class="tool-option" title="Uses the selected AI provider to find logic errors, auth bypasses, and vulnerabilities that rule-based tools cannot detect. Requires APPSEC_AI_SCAN=true.">
                         <input type="checkbox" name="tool_ai_scan" value="ai_scan">
                         <span>AI Deep Analysis</span>
                         <span class="tool-badge">AI</span>
@@ -1093,6 +1101,45 @@
             }
         };
         
+        // Populate the AI provider picker from /config: show each provider's
+        // default model and whether its API key is configured (presence only;
+        // the endpoint never returns key values).
+        async function loadAiProviders() {
+            const select = document.getElementById('aiProvider');
+            const help = document.getElementById('aiProviderHelp');
+            try {
+                const response = await fetch('/config');
+                if (!response.ok) return;
+                const config = await response.json();
+                const providers = config.ai_providers || [];
+                if (providers.length) {
+                    const display = { openai: 'OpenAI', anthropic: 'Anthropic' };
+                    select.innerHTML = '';
+                    for (const p of providers) {
+                        const option = document.createElement('option');
+                        option.value = p.name;
+                        const keyNote = p.key_set ? 'key set ✓' : `${p.key_env} missing ✗`;
+                        option.textContent = `${display[p.name] || p.name} (${p.default_model}) — ${keyNote}`;
+                        select.appendChild(option);
+                    }
+                    if (config.ai_provider) select.value = config.ai_provider;
+                    const updateHelp = () => {
+                        const chosen = providers.find(p => p.name === select.value);
+                        if (chosen && !chosen.key_set) {
+                            help.textContent = `Set ${chosen.key_env} in .env to use this provider for AI features.`;
+                        } else {
+                            help.textContent = '';
+                        }
+                    };
+                    select.addEventListener('change', updateHelp);
+                    updateHelp();
+                }
+            } catch (e) {
+                // Leave the static OpenAI/Anthropic options in place.
+            }
+        }
+        loadAiProviders();
+
         document.getElementById('scanForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -1112,6 +1159,7 @@
                 scan_level: formData.get('scanLevel'),
                 auto_fix: formData.get('autoFix') !== 'false',
                 auto_fix_mode: formData.get('autoFix'),
+                ai_provider: formData.get('aiProvider'),
                 selected_tools: selectedTools
             };
             

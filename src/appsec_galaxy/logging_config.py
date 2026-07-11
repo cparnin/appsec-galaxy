@@ -7,7 +7,7 @@ Consistent log format across CLI, web, and MCP surfaces.
 import logging
 import sys
 
-def setup_logging(level: str = "INFO", log_file: str = None) -> None:
+def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
     """
     Configure logging for the application.
 

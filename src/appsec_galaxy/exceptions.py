@@ -8,7 +8,7 @@ consistency across all scanner modules.
 class ScannerError(Exception):
     """Base exception for all scanner-related errors."""
 
-    def __init__(self, message: str, scanner: str = None, details: dict = None):
+    def __init__(self, message: str, scanner: str | None = None, details: dict | None = None):
         self.scanner = scanner
         self.details = details or {}
         super().__init__(message)

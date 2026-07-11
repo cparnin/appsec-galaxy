@@ -145,7 +145,7 @@ def _read_file_with_target_lines(
             return '\n'.join(f"{i+1}: {ln}" for i, ln in enumerate(head_lines)) + suffix
 
         # Merge overlapping windows.
-        windows = []
+        windows: list[tuple[int, int]] = []
         for t in targets:
             start = max(1, t - window)
             end = min(total, t + window)
@@ -267,7 +267,7 @@ def _validate_chain_batch(
     """Validate a batch of attack chains in a single API call."""
 
     # Gather source code for all files in all chains
-    chain_descriptions = []
+    chain_descriptions: list[dict[str, Any]] = []
     for idx, chain in enumerate(chains):
         entry = chain.get('entry_point', '')
         sink = chain.get('sink', '')

@@ -51,12 +51,12 @@ class CrossFileAnalyzer:
 
     def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path).resolve()
-        self.file_analysis_cache = {}
-        self.import_graph = {}
-        self.data_flow_graph = {}
-        self.entry_points = []
-        self.sensitive_sinks = []
-        self.external_imports = {}  # {module_name: [{file, line, imported_names}]}
+        self.file_analysis_cache: dict[str, dict[str, Any]] = {}
+        self.import_graph: dict[str, list[str]] = {}
+        self.data_flow_graph: dict[str, list[str]] = {}
+        self.entry_points: list[str] = []
+        self.sensitive_sinks: list[str] = []
+        self.external_imports: dict[str, list[dict[str, Any]]] = {}  # {module_name: [{file, line, imported_names}]}
 
     def analyze_repository_structure(self) -> dict[str, Any]:
         """
@@ -103,7 +103,7 @@ class CrossFileAnalyzer:
         logger.info(f"✅ Repository analysis complete: {structure['analysis_summary']}")
         return structure
 
-    def trace_data_flow(self, start_file: str, target_operation: str = None) -> dict[str, Any]:
+    def trace_data_flow(self, start_file: str, target_operation: str | None = None) -> dict[str, Any]:
         """
         Trace data flow from a starting file to sensitive operations.
 
@@ -164,7 +164,7 @@ class CrossFileAnalyzer:
         logger.info(f"✅ Data flow tracing complete: {result['summary']}")
         return result
 
-    def find_attack_chains(self, vulnerability_type: str = None) -> list[AttackChain]:
+    def find_attack_chains(self, vulnerability_type: str | None = None) -> list[AttackChain]:
         """
         Find potential attack chains across multiple files.
 
@@ -207,7 +207,7 @@ class CrossFileAnalyzer:
         finding.get('severity', 'unknown')
         vuln_type = finding.get('check_id', '').lower()
 
-        impact = {
+        impact: dict[str, Any] = {
             "financial_risk": "Low",
             "reputation_risk": "Low",
             "operational_risk": "Low",
@@ -269,7 +269,7 @@ class CrossFileAnalyzer:
         """Analyze a single file for security-relevant patterns"""
         try:
             content = file_path.read_text(encoding='utf-8', errors='ignore')
-            analysis = {
+            analysis: dict[str, Any] = {
                 "imports": [],
                 "exports": [],
                 "functions": [],
@@ -307,7 +307,7 @@ class CrossFileAnalyzer:
 
     def _analyze_python_file(self, content: str) -> dict[str, Any]:
         """Deep analysis of Python files using AST"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         try:
             tree = ast.parse(content)
@@ -349,7 +349,7 @@ class CrossFileAnalyzer:
 
     def _analyze_javascript_file(self, content: str) -> dict[str, Any]:
         """Analysis of JavaScript/TypeScript files using regex patterns"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -427,7 +427,7 @@ class CrossFileAnalyzer:
 
     def _analyze_java_file(self, content: str) -> dict[str, Any]:
         """Analysis of Java files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -452,14 +452,14 @@ class CrossFileAnalyzer:
 
     def _analyze_go_file(self, content: str) -> dict[str, Any]:
         """Analysis of Go files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
         for i, line in enumerate(lines, 1):
             # Import analysis
-            if re.search(r'import\s+[\'"]([^\'"]+)[\'"]', line):
-                match = re.search(r'import\s+[\'"]([^\'"]+)[\'"]', line)
+            match = re.search(r'import\s+[\'"]([^\'"]+)[\'"]', line)
+            if match:
                 analysis["imports"].append({"module": match.group(1), "line": i})
 
             # HTTP handlers
@@ -476,7 +476,7 @@ class CrossFileAnalyzer:
 
     def _analyze_php_file(self, content: str) -> dict[str, Any]:
         """Analysis of PHP files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -495,7 +495,7 @@ class CrossFileAnalyzer:
 
     def _analyze_rust_file(self, content: str) -> dict[str, Any]:
         """Enhanced analysis of Rust files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -570,7 +570,7 @@ class CrossFileAnalyzer:
 
     def _analyze_csharp_file(self, content: str) -> dict[str, Any]:
         """Enhanced analysis of C# files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -645,7 +645,7 @@ class CrossFileAnalyzer:
 
     def _analyze_ruby_file(self, content: str) -> dict[str, Any]:
         """Enhanced analysis of Ruby files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -721,7 +721,7 @@ class CrossFileAnalyzer:
 
     def _analyze_kotlin_file(self, content: str) -> dict[str, Any]:
         """Enhanced analysis of Kotlin files"""
-        analysis = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
+        analysis: dict[str, Any] = {"imports": [], "functions": [], "user_input_handlers": [], "sensitive_operations": []}
 
         lines = content.split('\n')
 
@@ -876,7 +876,7 @@ class CrossFileAnalyzer:
                     self.data_flow_graph[source_file] = []
                 self.data_flow_graph[source_file].append(target_file)
 
-    def _find_attack_chains_between(self, entry_point: str, sink: str, vuln_type: str) -> list[AttackChain]:
+    def _find_attack_chains_between(self, entry_point: str, sink: str, vuln_type: str | None) -> list[AttackChain]:
         """Find attack chains between specific entry point and sink"""
         chains = []
         paths = self._find_paths_between_files(entry_point, sink)
@@ -911,7 +911,7 @@ class CrossFileAnalyzer:
         dfs_path(start_file, end_file, [])
         return paths
 
-    def _create_attack_chain(self, path: list[str], vuln_type: str) -> AttackChain | None:
+    def _create_attack_chain(self, path: list[str], vuln_type: str | None) -> AttackChain | None:
         """Create an AttackChain object from a path"""
         if len(path) < 2:
             return None
@@ -1222,7 +1222,7 @@ def analyze_repository_structure(repo_path: str) -> dict[str, Any]:
         logger.error(f"Repository analysis failed: {e}")
         return {"status": "error", "error": str(e)}
 
-def trace_data_flow(repo_path: str, start_file: str, target_operation: str = None) -> dict[str, Any]:
+def trace_data_flow(repo_path: str, start_file: str, target_operation: str | None = None) -> dict[str, Any]:
     """
     Analysis function: Trace data flow from entry point to sensitive operations
 
@@ -1246,7 +1246,7 @@ def trace_data_flow(repo_path: str, start_file: str, target_operation: str = Non
         logger.error(f"Data flow tracing failed: {e}")
         return {"status": "error", "error": str(e)}
 
-def find_attack_chains(repo_path: str, vulnerability_type: str = None) -> dict[str, Any]:
+def find_attack_chains(repo_path: str, vulnerability_type: str | None = None) -> dict[str, Any]:
     """
     Analysis function: Find potential attack chains across files
 

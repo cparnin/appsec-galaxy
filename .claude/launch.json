@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "appsec_galaxy.web_app"],
+      "port": 8000
+    }
+  ]
+}

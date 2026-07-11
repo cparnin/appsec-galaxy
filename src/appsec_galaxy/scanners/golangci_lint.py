@@ -5,6 +5,7 @@ golangci-lint is the standard linter aggregator for Go, running multiple linters
 """
 
 from pathlib import Path
+from typing import Any
 from .quality_scanner_base import QualityScannerBase
 
 
@@ -101,7 +102,7 @@ class GolangCILintScanner(QualityScannerBase):
         # This is a limitation we can document
         return super().parse_output(output_file, repo_path)
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Extract findings from golangci-lint JSON."""
         if isinstance(raw_results, dict) and 'Issues' in raw_results:
             return raw_results['Issues']
@@ -109,7 +110,7 @@ class GolangCILintScanner(QualityScannerBase):
 
 
 # Export scanner function for main.py
-def run_golangci_lint(repo_path: str, output_dir: str = None) -> list:
+def run_golangci_lint(repo_path: str, output_dir: str | None = None) -> list:
     """Run golangci-lint quality scan."""
     scanner = GolangCILintScanner()
     return scanner.run_scan(repo_path, output_dir)

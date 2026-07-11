@@ -12,7 +12,7 @@ from appsec_galaxy.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-def validate_binary_path(env_var: str, default_bin: str, raise_on_error: bool = False) -> str:
+def validate_binary_path(env_var: str, default_bin: str, raise_on_error: bool = False) -> str | None:
     """
     Securely validate binary path from environment variable.
 
@@ -67,7 +67,7 @@ def validate_binary_path(env_var: str, default_bin: str, raise_on_error: bool = 
             raise BinaryNotFoundError(error_msg, scanner=default_bin) from e
         return None
 
-def validate_repo_path(repo_path: str, raise_on_error: bool = False) -> Path:
+def validate_repo_path(repo_path: str, raise_on_error: bool = False) -> Path | None:
     """
     Securely validate repository path to prevent command injection and path traversal.
 
@@ -264,7 +264,7 @@ def detect_languages(repo_path: Path) -> set:
         # Return empty set on failure - scanners will still run security scans
         return set()
 
-def filter_code_quality_by_severity(findings: list, min_severity: str = None) -> list:
+def filter_code_quality_by_severity(findings: list, min_severity: str | None = None) -> list:
     """
     Filter code quality findings by minimum severity level to reduce noise.
 

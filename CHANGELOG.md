@@ -17,8 +17,22 @@ semantic versioning.
 - Updated machine-facing workflows, examples, and client setup for
   `OPENAI_API_KEY` and optional model overrides.
 - Added an Anthropic provider option (`AI_PROVIDER=anthropic` with
-  `ANTHROPIC_API_KEY`); OpenAI remains the default. The interactive CLI now
-  includes a provider picker with a live connection test.
+  `ANTHROPIC_API_KEY`); OpenAI remains the default. The interactive CLI and
+  the web UI now include a provider picker with key-status display and a live
+  connection test; the web `/scan` endpoint accepts `ai_provider` and fails
+  fast with a clear error when the provider is unusable.
+- Documented previously unlisted environment variables (`GITHUB_TOKEN`,
+  `APPSEC_AUTO_FIX`, `APPSEC_AUTO_FIX_MODE`, web server `HOST`/`PORT`/
+  `APPSEC_WEB_API_KEY`/`APPSEC_WEB_CORS_ORIGINS`, MCP timeouts) and removed
+  the dead `APPSEC_AI_SCAN_MIN_CONFIDENCE` example.
+- Cleared all mypy errors across the codebase; the CI mypy gate is blocking.
+
+### Fixed
+
+- Usage analytics no longer crash silently on `datetime.UTC` misuse and now
+  report the real package version.
+- Skipping auto-fix (mode 4) through the web interface no longer returns a
+  crash-prone empty result.
 
 ### Security
 

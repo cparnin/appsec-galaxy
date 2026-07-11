@@ -113,7 +113,7 @@ def _normalize_eslint_finding(file_path: str, message: dict, repo_path: Path) ->
     }
 
 
-def run_eslint(repo_path: str, output_dir: str = None) -> list:
+def run_eslint(repo_path: str, output_dir: str | None = None) -> list:
     """
     Run ESLint code quality scanner on JavaScript/TypeScript files.
 

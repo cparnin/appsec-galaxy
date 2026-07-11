@@ -28,10 +28,8 @@ jobs:
       - name: Ruff (blocking)
         run: ruff check src/ mcp/ scripts/ tests/
 
-      # Informational until the imported tree's type debt is paid down
-      # (~200 pre-existing errors under the lenient baseline config).
-      - name: Mypy (non-blocking)
-        run: mypy src/appsec_galaxy mcp scripts tests || true
+      - name: Mypy (blocking)
+        run: mypy src/appsec_galaxy mcp scripts tests
 
   pytest:
     name: pytest (Python ${{ matrix.python-version }})

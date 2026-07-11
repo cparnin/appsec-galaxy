@@ -20,6 +20,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -958,7 +959,7 @@ def get_sbom_data(repo_path: str, format: str = "both") -> str:
     resolved = _resolve(repo_path)
     sbom_dir = os.path.join(core._get_repo_output_path(resolved), "sbom")
 
-    result = {
+    result: dict[str, Any] = {
         "success": True,
         "repository": os.path.basename(resolved),
         "format": format,

@@ -95,6 +95,14 @@ def enforce_api_key_for_sensitive_routes():
     return None
 
 
+def _restore_env(name: str, original: str | None) -> None:
+    """Put an env var back to its pre-scan value (or remove it)."""
+    if original:
+        os.environ[name] = original
+    else:
+        os.environ.pop(name, None)
+
+
 def _directory_browsing_enabled() -> bool:
     """Return whether repository discovery and browse endpoints are enabled."""
     return os.getenv("APPSEC_ENABLE_DIRECTORY_BROWSING", "false").lower() == "true"
@@ -136,11 +144,24 @@ def health_check():
 @app.route('/config', methods=['GET'])
 def get_config():
     """Get current scanner configuration."""
+    from appsec_galaxy.scanners.ai_scanner import (
+        PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, get_default_model,
+    )
+
     try:
         config = init_web_config()
-        # Return safe config info (no API keys)
+        # Return safe config info (key presence only, never key values)
         safe_config = {
             'ai_provider': config.get('ai_provider'),
+            'ai_providers': [
+                {
+                    'name': provider,
+                    'default_model': get_default_model(provider),
+                    'key_env': PROVIDER_KEY_ENV[provider],
+                    'key_set': bool(os.getenv(PROVIDER_KEY_ENV[provider], '').strip()),
+                }
+                for provider in SUPPORTED_PROVIDERS
+            ],
             'scan_level': config.get('scan_level'),
             'auto_fix_enabled': config.get('auto_fix', False),
             'scanners_available': ['semgrep', 'gitleaks', 'trivy', 'ai_scan']
@@ -173,6 +194,7 @@ def scan_repository():
         scan_level = data.get('scan_level', 'critical-high')
         auto_fix = data.get('auto_fix', False)
         selected_tools = data.get('selected_tools', ['semgrep', 'gitleaks', 'trivy', 'code_quality', 'sbom'])
+        requested_provider = str(data.get('ai_provider', '') or '').strip().lower()
 
         # Parse tool selection
         run_code_quality = 'code_quality' in selected_tools
@@ -185,6 +207,21 @@ def scan_repository():
         if not scanners_to_run:
             return jsonify({'error': 'At least one security scanner must be selected'}), 400
 
+        # AI provider selection: validate the choice and, when AI work is
+        # requested, verify the key and run a one-token connection test so
+        # misconfiguration fails fast with a clear message instead of half
+        # way through a scan.
+        from appsec_galaxy.scanners.ai_scanner import (
+            PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, reset_ai_client_cache,
+            test_ai_connection,
+        )
+
+        if requested_provider and requested_provider not in SUPPORTED_PROVIDERS:
+            return jsonify({
+                'error': f"ai_provider must be one of {', '.join(SUPPORTED_PROVIDERS)} "
+                         f"(got '{requested_provider}')"
+            }), 400
+
         # Validate repository path using existing function
         try:
             validated_path = validate_repo_path(repo_path)
@@ -195,12 +232,35 @@ def scan_repository():
         original_scan_level = os.environ.get('APPSEC_SCAN_LEVEL')
         original_auto_fix = os.environ.get('APPSEC_AUTO_FIX')
         original_code_quality = os.environ.get('APPSEC_CODE_QUALITY')
+        original_ai_provider = os.environ.get('AI_PROVIDER')
 
         logger.info(f"🔍 Web scan request - scan_level: {scan_level}, tools: {selected_tools}")
         os.environ['APPSEC_SCAN_LEVEL'] = scan_level
         os.environ['APPSEC_AUTO_FIX'] = str(auto_fix).lower()
         os.environ['APPSEC_CODE_QUALITY'] = 'true' if run_code_quality else 'false'
+        if requested_provider:
+            os.environ['AI_PROVIDER'] = requested_provider
+            reset_ai_client_cache()
         logger.info(f"🔍 Web scan - configured APPSEC_SCAN_LEVEL={scan_level}, APPSEC_CODE_QUALITY={run_code_quality}")
+
+        # AI scan requested: fail fast if the provider is not usable.
+        ai_requested = 'ai_scan' in scanners_to_run or auto_fix
+        if ai_requested:
+            active_provider = (os.getenv('AI_PROVIDER', '') or 'openai').strip().lower() or 'openai'
+            key_env = PROVIDER_KEY_ENV.get(active_provider)
+            if key_env and not os.getenv(key_env, '').strip():
+                _restore_env('AI_PROVIDER', original_ai_provider)
+                reset_ai_client_cache()
+                return jsonify({
+                    'error': f"{key_env} is not set. Add it to your .env "
+                             f"(see env.example) or choose a different AI provider."
+                }), 400
+            ok, message = test_ai_connection()
+            if not ok:
+                _restore_env('AI_PROVIDER', original_ai_provider)
+                reset_ai_client_cache()
+                return jsonify({'error': f'AI provider check failed: {message}'}), 400
+            logger.info(f"✅ {message}")
 
         try:
             # Track usage for IP monitoring
@@ -417,20 +477,12 @@ def scan_repository():
 
         finally:
             # Restore original environment variables
-            if original_scan_level:
-                os.environ['APPSEC_SCAN_LEVEL'] = original_scan_level
-            elif 'APPSEC_SCAN_LEVEL' in os.environ:
-                del os.environ['APPSEC_SCAN_LEVEL']
-
-            if original_auto_fix:
-                os.environ['APPSEC_AUTO_FIX'] = original_auto_fix
-            elif 'APPSEC_AUTO_FIX' in os.environ:
-                del os.environ['APPSEC_AUTO_FIX']
-
-            if original_code_quality:
-                os.environ['APPSEC_CODE_QUALITY'] = original_code_quality
-            elif 'APPSEC_CODE_QUALITY' in os.environ:
-                del os.environ['APPSEC_CODE_QUALITY']
+            _restore_env('APPSEC_SCAN_LEVEL', original_scan_level)
+            _restore_env('APPSEC_AUTO_FIX', original_auto_fix)
+            _restore_env('APPSEC_CODE_QUALITY', original_code_quality)
+            if requested_provider:
+                _restore_env('AI_PROVIDER', original_ai_provider)
+                reset_ai_client_cache()
 
     except Exception as e:
         logger.error(f"Scan error: {e}")

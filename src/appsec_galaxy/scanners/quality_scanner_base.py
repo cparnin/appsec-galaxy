@@ -15,6 +15,7 @@ Architecture:
 import subprocess
 import json
 from pathlib import Path
+from typing import Any
 from abc import ABC, abstractmethod
 from appsec_galaxy.logging_config import get_logger
 from appsec_galaxy.project_paths import CHECKOUT_ROOT, CONFIGS_DIR
@@ -167,7 +168,7 @@ class QualityScannerBase(ABC):
         self.logger.debug(f"No config found for {self.display_name}, tool will use defaults")
         return None
 
-    def run_scan(self, repo_path: str, output_dir: str = None) -> list[dict]:
+    def run_scan(self, repo_path: str, output_dir: str | None = None) -> list[dict]:
         """
         Main entry point - runs the quality scan.
 
@@ -288,7 +289,7 @@ class QualityScannerBase(ABC):
             self.logger.error(f"Failed to parse {self.display_name} output: {e}")
             return []
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """
         Extract list of findings from raw JSON output.
 

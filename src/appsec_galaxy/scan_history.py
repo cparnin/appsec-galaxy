@@ -80,8 +80,8 @@ def record_and_diff(findings: list[dict[str, Any]], output_dir: str | Path) -> d
         history = history[-_MAX_ENTRIES:]
 
         history_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(history_file, 'w') as f:
-            json.dump(history, f, indent=2)
+        with open(history_file, 'w') as fh:
+            json.dump(history, fh, indent=2)
 
         return delta
     except Exception as e:

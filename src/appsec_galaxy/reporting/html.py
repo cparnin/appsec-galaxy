@@ -86,7 +86,7 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         output_path = Path(output_dir)
 
         # Group findings by tool
-        results = {}
+        results: dict[str, list[dict[str, Any]]] = {}
         for finding in findings:
             tool = finding.get('tool', 'unknown')
             if tool not in results:
@@ -143,7 +143,7 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         attack_chains_count = 0
 
         # Extract cross-file analysis data for enhanced reporting with smart limits
-        cross_file_context_data = {
+        cross_file_context_data: dict[str, Any] = {
             'frameworks_detected': set(),
             'languages_detected': set(),
             'attack_chains': [],
@@ -219,7 +219,7 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         cross_file_context_data['business_impacts'] = cross_file_context_data['business_impacts'][:max_business_impacts]
 
         # Extract AI cross-file insights (Phase 2: LLM-powered analysis)
-        ai_cross_file_data = {
+        ai_cross_file_data: dict[str, Any] = {
             'enabled': False,
             'compound_risk_groups': [],
             'validated_chains': [],
@@ -364,7 +364,7 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         # Structured stats for the executive summary tiles (rendered from
         # real counts, not parsed out of the narrative text)
         security = [f for f in findings if f.get('category') != 'code_quality']
-        exec_stats = {
+        exec_stats: dict[str, Any] = {
             'critical': critical_count,
             'high': high_count,
             'sast': len([f for f in security if f.get('tool') == 'semgrep']),

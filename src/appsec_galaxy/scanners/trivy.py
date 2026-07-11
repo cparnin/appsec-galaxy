@@ -19,7 +19,7 @@ from .validation import validate_binary_path, validate_repo_path
 
 logger = logging.getLogger(__name__)
 
-def run_trivy_scan(repo_path: str, output_dir: Path = None, scan_level: str = "critical-high") -> list[dict[str, Any]]:
+def run_trivy_scan(repo_path: str, output_dir: Path | None = None, scan_level: str = "critical-high") -> list[dict[str, Any]]:
     """
     Run Trivy SCA (Software Composition Analysis) scanner on the given repository.
     First checks for existing Trivy results from GitHub Actions, then runs locally if needed.

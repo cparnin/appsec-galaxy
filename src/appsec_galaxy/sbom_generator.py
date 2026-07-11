@@ -218,7 +218,7 @@ class SBOMGenerator:
     def _convert_to_spdx(self, sbom_data: dict[str, Any]) -> str:
         """Convert SBOM to SPDX format"""
         # Simplified SPDX conversion - in production, use proper SPDX library
-        spdx_data = {
+        spdx_data: dict[str, Any] = {
             "spdxVersion": "SPDX-2.3",
             "dataLicense": "CC0-1.0",
             "SPDXID": "SPDXRef-DOCUMENT",
@@ -252,7 +252,7 @@ class SBOMGenerator:
     def _convert_to_cyclonedx(self, sbom_data: dict[str, Any]) -> str:
         """Convert SBOM to CycloneDX format"""
         # Simplified CycloneDX conversion - in production, use proper CycloneDX library
-        cyclonedx_data = {
+        cyclonedx_data: dict[str, Any] = {
             "bomFormat": "CycloneDX",
             "specVersion": "1.4",
             "serialNumber": f"urn:uuid:{datetime.now().isoformat()}",
@@ -291,7 +291,7 @@ import asyncio
 
 async def generate_repository_sbom(repo_path: str,
                                  output_dir: str = "outputs",
-                                 formats: list[str] = None) -> dict[str, Any]:
+                                 formats: list[str] | None = None) -> dict[str, Any]:
     """
     Generate SBOM for a repository with multiple format support
 

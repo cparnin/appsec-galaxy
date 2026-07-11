@@ -5,6 +5,7 @@ PHPStan focuses on finding errors in PHP code without running it.
 """
 
 from pathlib import Path
+from typing import Any
 from .quality_scanner_base import QualityScannerBase
 
 
@@ -105,7 +106,7 @@ class PHPStanScanner(QualityScannerBase):
             }
         }
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Extract findings from PHPStan JSON."""
         if isinstance(raw_results, dict):
             # PHPStan JSON format: {"totals": {...}, "files": {...}, "errors": [...]}
@@ -131,7 +132,7 @@ class PHPStanScanner(QualityScannerBase):
 
 
 # Export scanner function for main.py
-def run_phpstan(repo_path: str, output_dir: str = None) -> list:
+def run_phpstan(repo_path: str, output_dir: str | None = None) -> list:
     """Run PHPStan quality scan."""
     scanner = PHPStanScanner()
     return scanner.run_scan(repo_path, output_dir)

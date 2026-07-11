@@ -150,7 +150,7 @@ def _normalize_pylint_finding(message: dict, repo_path: Path) -> dict:
     }
 
 
-def run_pylint(repo_path: str, output_dir: str = None) -> list:
+def run_pylint(repo_path: str, output_dir: str | None = None) -> list:
     """
     Run Pylint code quality scanner on Python files.
 
@@ -187,7 +187,7 @@ def run_pylint(repo_path: str, output_dir: str = None) -> list:
         logger.debug(f"Starting Pylint scan of {repo_path_obj}")
 
         # Find Python files in repository
-        python_files = []
+        python_files: list[Path] = []
         for ext in ['.py']:
             python_files.extend(repo_path_obj.rglob(f'*{ext}'))
 

@@ -5,6 +5,7 @@ Checkstyle is the industry-standard code quality tool for Java.
 """
 
 from pathlib import Path
+from typing import Any
 from .quality_scanner_base import QualityScannerBase
 
 
@@ -148,13 +149,13 @@ class CheckstyleScanner(QualityScannerBase):
             self.logger.error(f"Failed to parse Checkstyle XML output: {e}")
             return []
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Not used - parse_output is overridden for XML parsing."""
         return []
 
 
 # Export scanner function for main.py
-def run_checkstyle(repo_path: str, output_dir: str = None) -> list:
+def run_checkstyle(repo_path: str, output_dir: str | None = None) -> list:
     """Run Checkstyle quality scan."""
     scanner = CheckstyleScanner()
     return scanner.run_scan(repo_path, output_dir)

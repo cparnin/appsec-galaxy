@@ -62,25 +62,25 @@ def get_git_context(repo_path: str) -> dict[str, str] | None:
         Dict with 'repo' and 'branch' keys, or None if not a git repo
     """
     try:
-        repo_path = Path(repo_path).resolve()
+        repo_dir = Path(repo_path).resolve()
 
         # Check if it's a git repository
         result = subprocess.run(
             ['git', 'rev-parse', '--git-dir'],
-            cwd=repo_path,
+            cwd=repo_dir,
             capture_output=True,
             text=True,
             timeout=5
         )
 
         if result.returncode != 0:
-            logger.debug(f"Not a git repository: {repo_path}")
+            logger.debug(f"Not a git repository: {repo_dir}")
             return None
 
         # Get current branch
         branch_result = subprocess.run(
             ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-            cwd=repo_path,
+            cwd=repo_dir,
             capture_output=True,
             text=True,
             timeout=5
@@ -97,7 +97,7 @@ def get_git_context(repo_path: str) -> dict[str, str] | None:
         # Get repository name from remote URL
         remote_result = subprocess.run(
             ['git', 'config', '--get', 'remote.origin.url'],
-            cwd=repo_path,
+            cwd=repo_dir,
             capture_output=True,
             text=True,
             timeout=5
@@ -105,7 +105,7 @@ def get_git_context(repo_path: str) -> dict[str, str] | None:
 
         if remote_result.returncode != 0 or not remote_result.stdout.strip():
             # No remote configured, use directory name
-            repo_name = repo_path.name
+            repo_name = repo_dir.name
             logger.debug(f"No git remote found, using directory name: {repo_name}")
         else:
             remote_url = remote_result.stdout.strip()
@@ -173,12 +173,12 @@ def get_output_path(repo_path: str, base_output_dir: str = "outputs") -> Path:
     Returns:
         Path object for output directory
     """
-    repo_path = Path(repo_path).resolve()
+    repo_dir = Path(repo_path).resolve()
     base_path = Path(base_output_dir)
 
     # Use directory name directly (simpler and more predictable)
     # Git detection can be confused by parent directories
-    safe_repo = sanitize_path_component(repo_path.name)
+    safe_repo = sanitize_path_component(repo_dir.name)
     logger.debug(f"Using directory name for output: {safe_repo}")
 
     output_path = base_path / safe_repo

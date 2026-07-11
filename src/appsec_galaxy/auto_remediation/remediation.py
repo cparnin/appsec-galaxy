@@ -189,7 +189,7 @@ def validate_vulnerability_type(vuln_type: str) -> bool:
 
     return True
 
-def _secure_file_path(repo_path: str, file_path: str) -> str:
+def _secure_file_path(repo_path: str, file_path: str) -> str | None:
     """
     Securely validate and construct file path to prevent path traversal.
 
@@ -286,7 +286,7 @@ def _is_text_file(file_path: Path) -> bool:
         logger.error(f"Error checking file type: {e}")
         return False
 
-def _secure_read_file(file_path: str, max_size: int = 10 * 1024 * 1024) -> str:
+def _secure_read_file(file_path: str, max_size: int = 10 * 1024 * 1024) -> str | None:
     """
     Securely read file content with size limits.
 
@@ -348,7 +348,7 @@ class AutoRemediator:
             or os.getenv('AI_MODEL', '').strip()
             or get_default_model(self.ai_provider)
         )
-        self._logged_unsupported_types = set()  # Track unsupported file types to reduce noise
+        self._logged_unsupported_types: set[str] = set()  # Track unsupported file types to reduce noise
 
         self.client = _get_ai_client()
 
@@ -567,7 +567,8 @@ Provide the corrected code for line {line_number}.
             logger.info(f"    Manual fix required for {file_path}:{line_number}")
             return None
 
-        indentation = re.match(r"^[ \t]*", original_line).group(0)
+        indent_match = re.match(r"^[ \t]*", original_line)
+        indentation = indent_match.group(0) if indent_match else ""
         candidate = indentation + cleaned_lines[0].strip()
 
         if any(ch in candidate for ch in ['\n', '\r']) or len(candidate) > 512:
@@ -983,7 +984,7 @@ Provide the corrected code for line {line_number}.
             except subprocess.CalledProcessError:
                 return "main"  # Final fallback
 
-    def create_pull_request(self, repo_path: str, branch_name: str, base_branch: str = None, findings: list[dict[str, Any]] = None, fixes: list[dict[str, Any]] = None) -> str | None:
+    def create_pull_request(self, repo_path: str, branch_name: str, base_branch: str | None = None, findings: list[dict[str, Any]] | None = None, fixes: list[dict[str, Any]] | None = None) -> str | None:
         """Create a pull request for the fixes (with user confirmation)."""
 
         # Detect default branch if not provided
@@ -1123,14 +1124,14 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
             print(f"❌ Error creating PR: {e}")
             return None
 
-    def remediate_findings(self, sast_findings: list[dict[str, Any]], repo_path: str, all_findings: list[dict[str, Any]] = None) -> dict[str, Any]:
+    def remediate_findings(self, sast_findings: list[dict[str, Any]], repo_path: str, all_findings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Main method to remediate a list of SAST findings."""
         logger.info(f"🔧 remediate_findings called with {len(sast_findings)} SAST findings")
         # Use all_findings for PR context if provided, otherwise use sast_findings
         if all_findings is None:
             all_findings = sast_findings
 
-        results = {
+        results: dict[str, Any] = {
             'total_findings': len(sast_findings),  # This should be SAST findings for remediation stats
             'remediable_findings': 0,
             'successful_fixes': 0,
@@ -1608,7 +1609,7 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
     def remediate_dependencies(self, dependency_findings: list[dict[str, Any]], repo_path: str) -> dict[str, Any]:
         """Main method to remediate dependency vulnerabilities."""
         logger.info(f"🔧 remediate_dependencies called with {len(dependency_findings)} dependency findings")
-        results = {
+        results: dict[str, Any] = {
             'total_findings': len(dependency_findings),
             'remediable_findings': 0,
             'successful_fixes': 0,

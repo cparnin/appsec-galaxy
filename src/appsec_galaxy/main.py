@@ -256,7 +256,7 @@ def validate_environment_config() -> dict[str, Any]:
     Raises:
         ValueError: If critical configuration is invalid
     """
-    config = {}
+    config: dict[str, Any] = {}
 
     # NOTE: SEMGREP_TIMEOUT / GITLEAKS_TIMEOUT / TRIVY_TIMEOUT used to be
     # validated here, but they were never wired through to the actual
@@ -349,8 +349,9 @@ def _browse_directories_interactive() -> str | None:
         if os.path.isdir(p):
             roots.append(p)
 
-    if os.getenv('REPO_SEARCH_PATHS'):
-        for p in os.getenv('REPO_SEARCH_PATHS').split(':'):
+    repo_search_paths = os.getenv('REPO_SEARCH_PATHS', '')
+    if repo_search_paths:
+        for p in repo_search_paths.split(':'):
             if os.path.isdir(p) and p not in roots:
                 roots.append(p)
 
@@ -483,7 +484,7 @@ def select_repository() -> str:
         else:
             print("Invalid choice. Please enter 1, 2, or 3")
 
-def run_security_scans(repo_path: str, scanners_to_run: list[str], output_dir: Path, scan_level: str = None) -> list[dict[str, Any]]:
+def run_security_scans(repo_path: str, scanners_to_run: list[str], output_dir: Path, scan_level: str | None = None) -> list[dict[str, Any]]:
     """
     Synchronous wrapper for async scanner execution.
 
@@ -534,7 +535,7 @@ async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], o
             logger.warning(f"Language detection failed: {e}")
 
     # Define scanner coroutines with their display names
-    scanner_tasks = []
+    scanner_tasks: list[dict[str, Any]] = []
 
     # Security scanners (always run)
     if "semgrep" in scanners_to_run or "all" in scanners_to_run:
@@ -550,7 +551,7 @@ async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], o
         scanner_tasks.append({
             'name': 'gitleaks',
             'display_name': 'Gitleaks (Secrets)',
-            'func': lambda: run_gitleaks(repo_path, str(output_dir / "raw")),
+            'func': lambda: run_gitleaks(repo_path, output_dir / "raw"),
             'category': 'security'
         })
 
@@ -558,7 +559,7 @@ async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], o
         scanner_tasks.append({
             'name': 'trivy',
             'display_name': 'Trivy (Dependencies)',
-            'func': lambda sl=scan_level: run_trivy_scan(repo_path, str(output_dir / "raw"), sl),
+            'func': lambda sl=scan_level: run_trivy_scan(repo_path, output_dir / "raw", sl),
             'category': 'security'
         })
 
@@ -670,34 +671,35 @@ async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], o
     ], return_exceptions=True)
 
     # Process results
-    all_findings = []
+    all_findings: list[dict[str, Any]] = []
     security_findings_count = 0
     code_quality_findings_count = 0
 
     for i, result in enumerate(results):
         task = scanner_tasks[i]
-        if isinstance(result, Exception):
+        if isinstance(result, BaseException):
             print(f"❌ {task['display_name']} failed: {result}")
-        else:
-            findings = result if result else []
-            # Add tool identifier to findings
-            for finding in findings:
-                finding['tool'] = task['name']
-            all_findings.extend(findings)
+            continue
 
-            # Track separately for reporting
-            if task.get('category') == 'code_quality':
-                code_quality_findings_count += len(findings)
-                if len(findings) > 0:
-                    print(f"✅ {task['display_name']}: {len(findings)} code quality issues")
-                elif len(findings) == 0 and not isinstance(result, Exception):
-                    print(f"✅ {task['display_name']}: clean (no issues found)")
+        findings = result if result else []
+        # Add tool identifier to findings
+        for finding in findings:
+            finding['tool'] = task['name']
+        all_findings.extend(findings)
+
+        # Track separately for reporting
+        if task.get('category') == 'code_quality':
+            code_quality_findings_count += len(findings)
+            if len(findings) > 0:
+                print(f"✅ {task['display_name']}: {len(findings)} code quality issues")
             else:
-                security_findings_count += len(findings)
-                if len(findings) > 0:
-                    print(f"✅ {task['display_name']}: {len(findings)} vulnerabilities")
-                else:
-                    print(f"✅ {task['display_name']}: no issues")
+                print(f"✅ {task['display_name']}: clean (no issues found)")
+        else:
+            security_findings_count += len(findings)
+            if len(findings) > 0:
+                print(f"✅ {task['display_name']}: {len(findings)} vulnerabilities")
+            else:
+                print(f"✅ {task['display_name']}: no issues")
 
     elapsed_time = time.time() - start_time
 
@@ -1187,7 +1189,7 @@ def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], 
     logger.debug(f"[{env_type}] Finding counts - Total: {len(all_findings)}, Semgrep: {semgrep_count}, Secrets: {secrets_count}")
 
     # Debug: Show breakdown of Semgrep findings by severity
-    semgrep_findings_by_severity = {}
+    semgrep_findings_by_severity: dict[str, int] = {}
     for finding in [f for f in all_findings if f.get('tool') == 'semgrep']:
         severity = finding.get('severity', 'unknown')
         semgrep_findings_by_severity[severity] = semgrep_findings_by_severity.get(severity, 0) + 1
@@ -1323,6 +1325,8 @@ def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], 
             except Exception as e:
                 print(f"\n❌ Auto-remediation failed: {e}")
                 return {"success": False, "message": f"Auto-remediation failed: {e}"}
+
+        return {"success": True, "message": "Auto-fix skipped"}
     else:
         print("\n💡 No auto-fixable vulnerabilities found in this scan.")
         return {"success": True, "message": "No auto-fixable vulnerabilities found"}
@@ -1335,12 +1339,14 @@ def track_usage() -> None:
     try:
         import platform
         import getpass
-        from datetime import datetime
+        from datetime import UTC, datetime
+
+        from appsec_galaxy import __version__
 
         # Collect basic usage metrics (no sensitive data)
         usage_data = {
-            'timestamp': datetime.now(datetime.UTC).isoformat(),
-            'version': '1.3.0',
+            'timestamp': datetime.now(UTC).isoformat(),
+            'version': __version__,
             'mode': 'CI/CD' if is_github_actions() else 'CLI',
             'platform': platform.system(),
             'user_id': getpass.getuser()[:8] + "***",  # Partially anonymized
@@ -1410,7 +1416,8 @@ def main(argv: list[str] | None = None) -> None:
 
     # Check if running in GitHub Actions (for client CI/CD)
     if is_github_actions():
-        return run_auto_mode()
+        run_auto_mode()
+        return
 
     # Otherwise run interactive mode (CLI or Web)
     print("\n" + "="*80)

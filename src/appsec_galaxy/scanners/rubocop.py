@@ -5,6 +5,7 @@ RuboCop is the de facto standard Ruby code style checker and linter.
 """
 
 from pathlib import Path
+from typing import Any
 from .quality_scanner_base import QualityScannerBase
 
 
@@ -102,7 +103,7 @@ class RuboCopScanner(QualityScannerBase):
             }
         }
 
-    def extract_findings_from_output(self, raw_results: any) -> list[dict]:
+    def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Extract findings from RuboCop JSON."""
         if isinstance(raw_results, dict) and 'files' in raw_results:
             findings = []
@@ -113,7 +114,7 @@ class RuboCopScanner(QualityScannerBase):
 
 
 # Export scanner function for main.py
-def run_rubocop(repo_path: str, output_dir: str = None) -> list:
+def run_rubocop(repo_path: str, output_dir: str | None = None) -> list:
     """Run RuboCop quality scan."""
     scanner = RuboCopScanner()
     return scanner.run_scan(repo_path, output_dir)

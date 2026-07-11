@@ -24,8 +24,8 @@ class CrossFileEnhancedAnalyzer:
 
     def __init__(self, repo_path: str):
         self.repo_path = repo_path
-        self.codebase_context = None
-        self.cross_file_analysis = None
+        self.codebase_context: dict[str, Any] | None = None
+        self.cross_file_analysis: dict[str, Any] | None = None
         self.cross_file_analyzer = CrossFileAnalyzer(repo_path)
 
     async def analyze_codebase_context(self) -> dict[str, Any]:
@@ -49,7 +49,7 @@ class CrossFileEnhancedAnalyzer:
 
     def _build_security_context(self, structure: dict[str, Any]) -> dict[str, Any]:
         """Build security-specific context from codebase structure"""
-        security_context = {
+        security_context: dict[str, Any] = {
             "risk_factors": [],
             "security_recommendations": [],
             "framework_specific_risks": [],
@@ -246,7 +246,7 @@ class CrossFileEnhancedAnalyzer:
 
     def _track_finding_patterns(self, findings: list[dict[str, Any]]) -> None:
         """Track patterns in findings for adaptive sizing"""
-        self._finding_counts = {}
+        self._finding_counts: dict[str, int] = {}
         for finding in findings:
             check_id = finding.get('check_id', '')
             base_check = check_id.split('.')[-1] if '.' in check_id else check_id
@@ -259,7 +259,7 @@ class CrossFileEnhancedAnalyzer:
         high_count = len([f for f in findings if f.get('severity', '').lower() in ['high', 'error']])
 
         # Get cross-file analysis insights
-        frameworks = self.codebase_context.get('structure', {}).get('frameworks', [])
+        frameworks = (self.codebase_context or {}).get('structure', {}).get('frameworks', [])
         attack_chains = len(self.cross_file_analysis.get('attack_chains', [])) if self.cross_file_analysis else 0
 
         summary = f"""## 🔒 Security Scan Results
@@ -303,7 +303,7 @@ class CrossFileEnhancedAnalyzer:
         self._track_finding_patterns(findings)
 
         # Reset attack pattern tracking for this batch
-        self._seen_attack_patterns = set()
+        self._seen_attack_patterns: set[str] = set()
 
         enhanced_findings = []
 
@@ -351,7 +351,7 @@ class CrossFileEnhancedAnalyzer:
         is_compact_mode = self._should_use_compact_mode(finding)
 
         # Get framework context
-        structure = self.codebase_context.get('structure', {})
+        structure = (self.codebase_context or {}).get('structure', {})
         frameworks = structure.get('frameworks', [])
         structure.get('languages', [])
 
@@ -493,7 +493,7 @@ class CrossFileEnhancedAnalyzer:
 
     def _analyze_finding_with_context(self, finding: dict[str, Any]) -> dict[str, Any]:
         """Analyze a finding with codebase context using real CrossFileAnalyzer data"""
-        analysis = {
+        analysis: dict[str, Any] = {
             "severity_justification": "",
             "attack_vector": "",
             "likelihood": "",
@@ -617,7 +617,7 @@ class CrossFileEnhancedAnalyzer:
 
     def _generate_contextual_remediation(self, finding: dict[str, Any]) -> dict[str, Any]:
         """Generate context-aware remediation suggestions"""
-        remediation = {
+        remediation: dict[str, Any] = {
             "immediate_actions": [],
             "long_term_solutions": [],
             "code_examples": [],
@@ -702,7 +702,7 @@ class CrossFileEnhancedAnalyzer:
 
     def _analyze_cross_file_implications(self, finding: dict[str, Any]) -> dict[str, Any]:
         """Analyze cross-file implications using cross-file analyzer data with detailed context"""
-        cross_file_analysis = {
+        cross_file_analysis: dict[str, Any] = {
             "affected_files": [],
             "data_flow_paths": [],
             "potential_attack_chains": [],
@@ -843,7 +843,7 @@ class CrossFileEnhancedAnalyzer:
 
     def _generate_strategic_recommendations(self, findings: list[dict[str, Any]]) -> list[str]:
         """Generate strategic recommendations based on findings and context"""
-        recommendations = []
+        recommendations: list[str] = []
 
         if not self.codebase_context:
             return recommendations

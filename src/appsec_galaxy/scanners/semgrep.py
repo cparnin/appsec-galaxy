@@ -30,7 +30,7 @@ def _categorize_finding(check_id: str) -> str:
     # Language-specific linters handle code quality
     return 'security'
 
-def run_semgrep(repo_path: str, output_dir: str = None, scan_level: str = None) -> list:
+def run_semgrep(repo_path: str, output_dir: str | None = None, scan_level: str | None = None) -> list:
     """
     Run Semgrep SAST scanner on the given repository path.
     Returns a list of findings in standardized format.
@@ -104,7 +104,8 @@ def run_semgrep(repo_path: str, output_dir: str = None, scan_level: str = None) 
         # Use subprocess.run with shell=False for security
         # Ensure Semgrep can validate TLS even if system trust stores aren't configured
         env = os.environ.copy()
-        if not env.get('SSL_CERT_FILE') or not Path(env.get('SSL_CERT_FILE')).exists():
+        ssl_cert_file = env.get('SSL_CERT_FILE')
+        if not ssl_cert_file or not Path(ssl_cert_file).exists():
             try:
                 import certifi
                 env['SSL_CERT_FILE'] = certifi.where()
@@ -172,7 +173,7 @@ def run_semgrep(repo_path: str, output_dir: str = None, scan_level: str = None) 
         logger.info(f"📊 Total findings before filtering: {len(all_results)}")
 
         # Debug: Show severity breakdown before filtering
-        severity_counts = {}
+        severity_counts: dict[str, int] = {}
         for finding in all_results:
             severity = finding.get('extra', {}).get('severity') or finding.get('severity', '')
             severity_counts[severity] = severity_counts.get(severity, 0) + 1
@@ -224,7 +225,7 @@ def run_semgrep(repo_path: str, output_dir: str = None, scan_level: str = None) 
                 results.append(Finding.from_semgrep(finding, normalized_severity, category).to_dict())
 
         # Final results summary
-        final_severity_counts = {}
+        final_severity_counts: dict[str, int] = {}
         for finding in results:
             severity = finding.get('severity', 'unknown')
             final_severity_counts[severity] = final_severity_counts.get(severity, 0) + 1

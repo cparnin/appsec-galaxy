@@ -224,7 +224,7 @@ class ManifestParser:
             import tomllib
         except ImportError:
             try:
-                import tomli as tomllib
+                import tomli as tomllib  # type: ignore[no-redef]
             except ImportError:
                 # Fallback: regex-based parsing
                 return ManifestParser._parse_pyproject_toml_regex(path)
