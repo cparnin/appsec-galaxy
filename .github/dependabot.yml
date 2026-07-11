@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"
+    groups:
+      all-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    groups:
+      all-pip:
+        patterns:
+          - "*"
+    ignore:
+      # mcp floor bumps conflict with semgrep's dependency pins
+      # (pip ResolutionImpossible). Revisit when semgrep relaxes upstream.
+      - dependency-name: "mcp"

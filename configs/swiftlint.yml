@@ -1,0 +1,107 @@
+# AppSec Galaxy Default SwiftLint Configuration for Swift
+#
+# Sensible defaults that catch real code quality issues.
+# Based on Swift API Design Guidelines with practical adjustments.
+
+# Exclude common directories that shouldn't be linted
+excluded:
+  - Carthage
+  - Pods
+  - .build
+  - Build
+  - DerivedData
+  - vendor
+  - node_modules
+  - Package.swift
+
+# Only enable essential rules to reduce noise
+# These catch real bugs and maintainability issues
+
+opt_in_rules:
+  - closure_end_indentation
+  - closure_spacing
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - empty_collection_literal
+  - empty_count
+  - empty_string
+  - fatal_error_message
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - overridden_super_call
+  - private_action
+  - private_outlet
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - sorted_first_last
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - yoda_condition
+
+# Disable noisy rules that generate too many low-value warnings
+disabled_rules:
+  - todo
+  - trailing_whitespace
+  - vertical_whitespace
+  - opening_brace
+  - identifier_name  # Often triggers on single-letter loop variables
+  - type_name  # Can be too strict for common patterns
+
+# Line length - be reasonable for modern screens
+line_length:
+  warning: 150
+  error: 200
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_comments: true
+
+# File length - reasonable limits
+file_length:
+  warning: 500
+  error: 1000
+  ignore_comment_only_lines: true
+
+# Type body length
+type_body_length:
+  warning: 300
+  error: 500
+
+# Function body length
+function_body_length:
+  warning: 60
+  error: 100
+
+# Function parameter count
+function_parameter_count:
+  warning: 6
+  error: 8
+
+# Cyclomatic complexity
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+
+# Nesting level
+nesting:
+  type_level:
+    warning: 3
+  function_level:
+    warning: 5
+
+# Large tuple
+large_tuple:
+  warning: 4
+  error: 6
+
+# Force cast - these often indicate design issues
+force_cast:
+  severity: warning
+
+# Force try - these can hide errors
+force_try:
+  severity: warning
+
+# Reporter type - JSON for AppSec Galaxy integration
+reporter: json

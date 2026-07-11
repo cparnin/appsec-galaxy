@@ -1,5 +1,5 @@
 /**
- * AppSec-Sentinel Default ESLint Configuration
+ * AppSec Galaxy Default ESLint Configuration
  *
  * This config is used when scanning repositories that don't have their own ESLint setup.
  * It provides sensible defaults for code quality scanning across JavaScript/TypeScript projects.

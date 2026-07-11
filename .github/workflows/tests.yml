@@ -1,0 +1,75 @@
+name: Tests
+
+# Runs the AppSec Galaxy quality gates on every push and pull request.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: ruff + mypy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project and quality tools
+        run: pip install -e ".[web,dev]"
+
+      - name: Ruff (blocking)
+        run: ruff check src/ mcp/ scripts/ tests/
+
+      # Informational until the imported tree's type debt is paid down
+      # (~200 pre-existing errors under the lenient baseline config).
+      - name: Mypy (non-blocking)
+        run: mypy src/appsec_galaxy mcp scripts tests || true
+
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[web,dev]"
+
+      - name: Show environment
+        run: |
+          python --version
+          pip show pytest | grep -E "Name|Version"
+
+      - name: Run pytest
+        env:
+          # Unit tests never make live model calls.
+          APPSEC_AI_SCAN: "false"
+          APPSEC_DEBUG: "false"
+        run: |
+          pytest tests/ -v --tb=short
+
+      - name: Upload coverage (optional)
+        if: always()
+        run: |
+          echo "Tests complete. Add --cov=src for coverage reports once configured."

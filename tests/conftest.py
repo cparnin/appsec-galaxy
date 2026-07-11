@@ -1,8 +1,8 @@
 """
-Shared pytest fixtures and configuration for AppSec-Sentinel test suite.
+Shared pytest fixtures and configuration for the AppSec Galaxy test suite.
 
 This module provides reusable fixtures for testing security scanners,
-validation functions, and other AppSec-Sentinel components.
+validation functions, and other AppSec Galaxy components.
 """
 
 import pytest
@@ -10,16 +10,10 @@ import tempfile
 import shutil
 import json
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 import subprocess
-import os
-import sys
-
-# Add src to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 # Import exceptions for testing
-from exceptions import ValidationError, BinaryNotFoundError, ScanExecutionError
 
 
 @pytest.fixture

@@ -1,48 +1,10 @@
-# AppSec-Sentinel MCP Server Environment Variables
-# Copy this file to mcp_env and fill in your credentials
-
-# AI Provider Configuration (REQUIRED)
-# Choose one provider and uncomment its settings
-
-# OpenAI (RECOMMENDED)
+# AI provider: openai (default) or anthropic. Set the matching API key.
 AI_PROVIDER=openai
-OPENAI_API_KEY=sk-your-openai-api-key-here
-AI_MODEL=gpt-4o-mini
-
-# Anthropic/Claude (Alternative)
-#AI_PROVIDER=claude
-#CLAUDE_API_KEY=your-claude-api-key-here
-#AI_MODEL=claude-sonnet-4-20250514
-
-# Gemini
-# AI_PROVIDER=gemini
-# GEMINI_API_KEY=your_gemini_api_key
-# AI_MODEL=gemini-1.5-flash
-
-# AWS Bedrock (Alternative)
-#AI_PROVIDER=aws_bedrock
-#AWS_ACCESS_KEY_ID=your_aws_access_key_id
-#AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
-#AWS_REGION=us-east-2
-#AWS_DEFAULT_REGION=us-east-2
-#AI_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
-#INFERENCE_PROFILE_ID=arn:aws:bedrock:us-east-2:YOUR_ACCOUNT_ID:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0
-
-# GitHub Integration (REQUIRED for auto-remediation)
-GITHUB_TOKEN=ghp_your_github_token_here
-
-# AppSec-Sentinel Installation (auto-detected, but can override)
-APPSEC_PATH=/path/to/appsec-sentinel
-REPO_SEARCH_PATHS=/path/to/repos
-
-# Scanning Configuration (optional)
-APPSEC_SCAN_LEVEL=critical-high
-APPSEC_CODE_QUALITY=false
-APPSEC_DEBUG=false
-
-# MCP Timeout Configuration (optional)
-# NOTE: Claude Desktop has a 4-minute client timeout. Keep scans under 4 minutes by:
-#       - Using APPSEC_SCAN_LEVEL=critical-high (not "all")
-#       - Setting APPSEC_CODE_QUALITY=false (code quality linters are slow)
-# MCP_SCAN_TIMEOUT=300           # Scan timeout in seconds (default: 300 = 5 minutes)
-# MCP_REMEDIATE_TIMEOUT=600      # Auto-remediation timeout in seconds (default: 600 = 10 minutes)
+OPENAI_API_KEY=your-openai-api-key-here
+#ANTHROPIC_API_KEY=your-anthropic-api-key-here
+APPSEC_SCAN_LEVEL=all
+APPSEC_AI_SCAN=true
+APPSEC_AI_SCAN_DEPTH=standard
+APPSEC_AI_SCAN_TIER=3
+APPSEC_AI_SCAN_MAX_FILES=75
+APPSEC_AI_SCAN_MIN_CONFIDENCE=0.7

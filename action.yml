@@ -1,6 +1,6 @@
-name: 'AppSec-Sentinel'
-description: 'Comprehensive security scanner with SAST, secrets detection, dependency scanning, and optional LLM-powered auto-remediation'
-author: 'AppSec-Sentinel Contributors'
+name: 'AppSec Galaxy Scan'
+description: 'AI-powered application security scanning with cross-file attack-chain analysis'
+author: 'AppSec Galaxy Contributors'
 
 branding:
   icon: 'shield'
@@ -8,29 +8,19 @@ branding:
 
 inputs:
   ai-provider:
-    description: "The LLM provider to use for auto-remediation ('openai', 'claude', or 'aws_bedrock')"
+    description: "AI provider: 'openai' (default) or 'anthropic'"
     required: false
     default: 'openai'
-  aws-access-key-id:
-    description: 'AWS Access Key ID for AWS Bedrock'
-    required: false
-  aws-secret-access-key:
-    description: 'AWS Secret Access Key for AWS Bedrock'
-    required: false
-  aws-region:
-    description: 'AWS Region for Bedrock service'
-    required: false
-    default: 'us-east-1'
-  inference-profile-id:
-    description: 'AWS Bedrock Inference Profile ID for Claude .5 (e.g., us.anthropic.claude-sonnet-4-5-20250929-v1:0)'
-    required: false
-  # Alternative LLM providers
   openai-api-key:
-    description: 'OpenAI API key for auto-remediation (optional)'
+    description: 'OpenAI API key used by AI scanning and remediation (AI_PROVIDER=openai)'
     required: false
-  claude-api-key:
-    description: 'Claude API key for auto-remediation (optional)'
+  anthropic-api-key:
+    description: 'Anthropic API key used by AI scanning and remediation (AI_PROVIDER=anthropic)'
     required: false
+  ai-model:
+    description: 'Optional model override; defaults to the selected scan depth for the provider'
+    required: false
+    default: ''''
   auto-fix:
     description: 'Enable automatic remediation and PR creation'
     required: false
@@ -51,6 +41,18 @@ inputs:
     description: 'Enable code quality and maintainability scanning (in addition to security)'
     required: false
     default: 'true'
+  dependency-analysis:
+    description: 'Enable dependency code-path analysis (traces usage, health, depth)'
+    required: false
+    default: 'true'
+  ai-scan:
+    description: 'Enable AI-native deep analysis for logic errors, auth bypasses, and race conditions'
+    required: false
+    default: 'false'
+  ai-scan-depth:
+    description: 'AI scan depth: quick, standard, or deep'
+    required: false
+    default: 'standard'
 
 outputs:
   total-findings:
@@ -70,7 +72,7 @@ runs:
   using: 'composite'
   steps:
     - name: Setup Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
       with:
         python-version: '3.11'
         
@@ -79,44 +81,55 @@ runs:
       run: |
         python -m pip install --upgrade pip
         pip install --upgrade -r ${{ github.action_path }}/requirements.txt
+        python -m pip install --no-deps ${{ github.action_path }}
 
     - name: Setup Trivy
-      uses: aquasecurity/setup-trivy@v0.2.0
+      uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567  # v0.2.6 (post-incident safe version)
       with:
-        version: v0.64.1
-        
+        version: v0.72.0  # pinned; bump deliberately (v0.69.4 was a malicious release, never auto-latest)
+
     - name: Setup Gitleaks
-      uses: gacts/gitleaks@v1
+      uses: gacts/gitleaks@c9a0338361dc45a01aa7ebaaa5330179f3c62873  # v1.3.2
       with:
-        version: v8.18.4
+        version: 8.30.1  # pinned; matches self-scan.yml (supply-chain hygiene)
         run: false  # Just install, don't run yet
-        
+
     - name: Setup Syft for SBOM generation
-      uses: anchore/sbom-action/download-syft@v0.17.9
-      with:
-        syft-version: v1.19.2
+      shell: bash
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/v1.46.0/install.sh | sh -s -- -b /usr/local/bin v1.46.0
+        syft version
         
     - name: Setup Node.js for dependency fixes
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
       with:
         node-version: '18'
+
+    - name: Install code quality linters
+      shell: bash
+      # Pylint + ESLint cover the most common client stacks. Other linters
+      # (rubocop, golangci-lint, ...) run only if already on the runner;
+      # AppSec Galaxy gracefully skips missing ones.
+      run: |
+        pip install pylint
+        npm install -g eslint
         
     - name: Setup Go for dependency fixes
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16  # v6.5.0
       with:
         go-version: '1.21'
         
     - name: Setup Java for dependency fixes
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520  # v5.4.0
       with:
         distribution: 'temurin'
         java-version: '17'
         
     - name: Setup Rust for dependency fixes
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
       
     - name: Setup PHP for dependency fixes
-      uses: shivammathur/setup-php@v2
+      uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240  # v2.37.2
       with:
         php-version: '8.2'
         tools: composer
@@ -124,29 +137,28 @@ runs:
     - name: Configure Git for auto-remediation
       shell: bash
       run: |
-        git config --global user.email "appsec-bot@appsec-sentinel.org"
-        git config --global user.name "AppSec-Sentinel Bot"
-        
-    - name: Run AppSec-Sentinel Scanner
+        git config --global user.email "appsec-galaxy@users.noreply.github.com"
+        git config --global user.name "AppSec Galaxy"
+
+    - name: Run AppSec Galaxy
       shell: bash
       env:
         AI_PROVIDER: ${{ inputs.ai-provider }}
-        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
-        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
-        AWS_REGION: ${{ inputs.aws-region }}
-        INFERENCE_PROFILE_ID: ${{ inputs.inference-profile-id }}
-        # Alternative LLM provider credentials
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        CLAUDE_API_KEY: ${{ inputs.claude-api-key }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        AI_MODEL: ${{ inputs.ai-model }}
         APPSEC_AUTO_FIX: ${{ inputs.auto-fix }}
         APPSEC_AUTO_FIX_MODE: ${{ inputs.auto-fix-mode }}
         APPSEC_SCAN_LEVEL: ${{ inputs.scan-level }}
         APPSEC_CODE_QUALITY: ${{ inputs.code-quality }}
+        APPSEC_DEPENDENCY_ANALYSIS: ${{ inputs.dependency-analysis }}
+        APPSEC_AI_SCAN: ${{ inputs.ai-scan }}
+        APPSEC_AI_SCAN_DEPTH: ${{ inputs.ai-scan-depth }}
         APPSEC_DEBUG: true
         APPSEC_LOG_LEVEL: DEBUG
       run: |
-        cd ${{ github.action_path }}/src
-        python main.py
+        cd ${{ github.action_path }}
+        python -m appsec_galaxy.main
         
     - name: Set outputs
       shell: bash
@@ -154,9 +166,14 @@ runs:
         set -euo pipefail
         cd ${{ github.action_path }}
 
-        semgrep_file="outputs/raw/semgrep.json"
-        gitleaks_file="outputs/raw/gitleaks.json"
-        trivy_file="outputs/raw/trivy-sca.json"
+        # AppSec Galaxy writes outputs/<repo_name>/raw/; the old flat outputs/raw/
+        # never exists, which made every count silently report 0.
+        raw_dir=$(ls -d outputs/*/raw 2>/dev/null | head -1 || true)
+        raw_dir=${raw_dir:-outputs/raw}
+
+        semgrep_file="$raw_dir/semgrep.json"
+        gitleaks_file="$raw_dir/gitleaks.json"
+        trivy_file="$raw_dir/trivy-sca.json"
 
         if [ -f "$semgrep_file" ]; then
           critical_count=$(jq '[.results[]? | (.extra.severity? // .severity? // "") | ascii_downcase | select(. == "critical")] | length' "$semgrep_file" 2>/dev/null || echo "0")
@@ -188,7 +205,8 @@ runs:
           echo "high-findings=$high_count"
           echo "secrets-found=$secrets_count"
           echo "report-path=${{ github.action_path }}/outputs/"
-          if [ -f "outputs/sbom/sbom.cyclonedx.json" ] || [ -f "outputs/sbom/sbom.spdx.json" ]; then
+          sbom_dir="$(dirname "$raw_dir")/sbom"
+          if [ -f "$sbom_dir/sbom.cyclonedx.json" ] || [ -f "$sbom_dir/sbom.spdx.json" ]; then
             echo "sbom-generated=true"
           else
             echo "sbom-generated=false"
@@ -199,32 +217,13 @@ runs:
       shell: bash
       if: inputs.fail-on-critical == 'true'
       run: |
-        # Change to action directory where outputs are created
+        # Delegate to the tested gate script: resolves the repo-namespaced
+        # output layout and honors .appsec-galaxy-ignore baselines in the scanned repo.
         cd ${{ github.action_path }}
-        
-        critical_count=0
-        secrets_count=0
-
-        if [ -f "outputs/raw/semgrep.json" ]; then
-          critical_count=$(jq '[.results[]? | (.extra.severity? // .severity? // "") | ascii_downcase | select(. == "critical")] | length' outputs/raw/semgrep.json 2>/dev/null || echo "0")
-          if [ "$critical_count" -gt 0 ]; then
-            echo "❌ $critical_count critical vulnerabilities found!"
-            exit 1
-          fi
-        fi
-
-        if [ -f "outputs/raw/gitleaks.json" ]; then
-          secrets_count=$(jq 'length' outputs/raw/gitleaks.json 2>/dev/null || echo "0")
-          if [ "$secrets_count" -gt 0 ]; then
-            echo "❌ $secrets_count secrets detected!"
-            exit 1
-          fi
-        fi
-        
-        echo "✅ No critical security issues found"
+        python scripts/fail_on_critical.py
         
     - name: Upload Security Reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
       if: always()
       with:
         name: security-reports

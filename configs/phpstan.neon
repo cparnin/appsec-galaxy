@@ -1,4 +1,4 @@
-# AppSec-Sentinel PHPStan Configuration for PHP Code Quality
+# IX-Guard PHPStan Configuration for PHP Code Quality
 # PHPStan performs static analysis without running code
 
 parameters:

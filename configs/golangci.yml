@@ -1,4 +1,4 @@
-# AppSec-Sentinel Default golangci-lint Configuration for Go
+# AppSec Galaxy Default golangci-lint Configuration for Go
 #
 # Sensible defaults that catch real issues without excessive noise.
 # Runs fast linters in parallel for best performance.

@@ -4,7 +4,7 @@
     "https://checkstyle.org/dtds/configuration_1_3.dtd">
 
 <!--
-  AppSec-Sentinel Default Checkstyle Configuration for Java
+  IX-Guard Default Checkstyle Configuration for Java
 
   Sensible defaults that catch real code quality issues without excessive noise.
   Based on Google Java Style Guide with practical adjustments.
