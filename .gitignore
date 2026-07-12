@@ -28,7 +28,6 @@ wheels/
 # IDE
 .vscode/
 .idea/
-.claude/
 
 # Security tool binaries (should be installed separately)
 bin/
@@ -43,6 +42,10 @@ reports/
 archive/
 scan_output.txt
 
+# Client exports (when testing tool ingestion)
+clients/client_exports/*.json
+clients/client_exports/*.xml
+
 # Environment/config
 .env
 .env.*
@@ -51,3 +54,7 @@ scan_output.txt
 .DS_Store
 Thumbs.db
 mcp_env
+.claude/worktrees/
+
+# Local agent tooling
+.codex/

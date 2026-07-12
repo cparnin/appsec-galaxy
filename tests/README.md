@@ -1,81 +1,50 @@
-# AppSec-Sentinel Tests
+# AppSec Galaxy tests
 
-Simple, consolidated test suite for the AppSec-Sentinel security scanner.
+The suite covers scanner parsing and failure behavior, path and subprocess
+security, cross-file analysis, reporting, remediation safety, AI provider boundaries,
+MCP tools/resources, web smoke behavior, baselines, SARIF/SBOM metadata, and
+machine-facing configuration.
 
-## Quick Start
+## Run the suite
 
-```bash
-# Run all tests
-pytest tests/test_appsec.py -v
-
-# Run with coverage
-pytest tests/test_appsec.py --cov=src --cov-report=html
-
-# Use the test runner
-./run_tests.sh
-```
-
-## What's Tested
-
-| Module | Tests | Coverage |
-|--------|-------|----------|
-| Exceptions | ✅ 5 tests | Exception handling |
-| Binary Validation | ✅ 4 tests | Security: command injection, null bytes |
-| Repo Validation | ✅ 6 tests | Security: path traversal, dangerous chars |
-| Language Detection | ✅ 5 tests | Multi-language detection |
-| Gitleaks Scanner | ✅ 4 tests | Secrets detection |
-| Semgrep Scanner | ✅ 4 tests | SAST analysis |
-| Trivy Scanner | ✅ 3 tests | Dependency scanning |
-
-**Total: 35 tests** covering all major functionality
-
-## File Structure
-
-```
-tests/
-├── test_appsec.py    # All tests (single file)
-├── conftest.py        # Shared fixtures
-├── pytest.ini         # Test configuration
-└── README.md          # This file
-```
-
-## Fixtures (in conftest.py)
-
-- `mock_repo` - Fake repository with .git and sample files
-- `temp_dir` - Clean temp directory
-- `output_dir` - Output directory for scanner results
-- `sample_*_output` - Mock scanner outputs (gitleaks, semgrep, trivy)
-- `mock_env_vars` - Test environment variables
-
-## Test Markers
-
-Run specific test categories:
+From the repository root:
 
 ```bash
-pytest -m security      # Security validation tests only
-pytest -m scanner       # Scanner module tests only
-pytest -m "not slow"    # Skip slow tests
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -v --tb=short
 ```
 
-## Coverage Report
+`PYTHON_DOTENV_DISABLED=1` prevents tests from loading a developer's local
+credential file. Provider/client tests also unset `OPENAI_API_KEY` and
+`ANTHROPIC_API_KEY` and replace
+every SDK/model boundary, so CI never makes a live model request.
 
-After running tests with `--cov`:
+## Focused suites
+
 ```bash
-open outputs/coverage/html/index.html
+.venv/bin/python -m pytest tests/test_openai_provider.py -q
+.venv/bin/python -m pytest tests/test_openai_consumers.py -q
+.venv/bin/python -m pytest tests/test_appsec_galaxy.py -k MCP -q
+.venv/bin/python -m pytest tests/test_appsec_galaxy.py -k AppSecGalaxyIgnore -q
 ```
 
-## Adding Tests
+## Test rules
 
-All tests go in `tests/test_appsec.py`. Use the existing pattern:
+- Use `tmp_path` for repository, output, and baseline fixtures.
+- Mock subprocesses and optional scanner binaries unless the test explicitly
+  verifies a locally available tool.
+- Never read `.env` or `mcp/mcp_env`.
+- Never construct a real OpenAI client or send a network request.
+- Assert fail-open behavior where failures must preserve findings.
+- Assert fail-closed behavior at credential, path, command, remediation, and
+  output-sanitization boundaries.
+- Keep machine-interface tests aligned with the GitHub Action, workflows, MCP
+  server, console command, and public resource schemes.
 
-```python
-class TestYourModule:
-    """Test description."""
+## Quality gates
 
-    def test_your_feature(self, mock_repo):
-        """Test what this does."""
-        result = your_function(mock_repo)
-        assert result is not None
+```bash
+.venv/bin/python -m ruff check src/ mcp/ scripts/ tests/
+.venv/bin/python -m mypy src/appsec_galaxy mcp scripts tests
 ```
 
-That's it!
+The GitHub workflow runs the full suite on Python 3.11, 3.12, and 3.13.

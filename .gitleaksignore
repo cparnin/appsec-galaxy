@@ -1,0 +1,17 @@
+# Intentional fake-secret fixtures in this repository's own source, suppressed
+# by fingerprint for raw `gitleaks dir .` scans (run from the repo root with
+# configs/.gitleaks.toml). The app-level baseline for AppSec Galaxy self-scans
+# lives in .appsec-galaxy-ignore.
+#
+# A remediation example string showing what NOT to do:
+src/appsec_galaxy/enhanced_analyzer.py:generic-secret:672
+# Planted-vulnerability fixtures the test suite expects scanners to detect:
+tests/conftest.py:hardcoded-password:40
+tests/conftest.py:generic-secret:49
+tests/conftest.py:hardcoded-password:355
+# Dummy provider keys used by AI client unit tests:
+tests/test_ai_provider.py:generic-secret:171
+tests/test_ai_provider.py:generic-secret:193
+tests/test_ai_consumers.py:generic-secret:370
+tests/test_ai_consumers.py:generic-secret:464
+tests/test_ai_consumers.py:generic-secret:465

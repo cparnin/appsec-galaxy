@@ -1,4 +1,4 @@
-# AppSec-Sentinel Clippy Configuration for Rust Code Quality
+# AppSec Galaxy Clippy Configuration for Rust Code Quality
 # Clippy is the official Rust linter with 600+ lint checks
 
 # Warn on all clippy lint groups

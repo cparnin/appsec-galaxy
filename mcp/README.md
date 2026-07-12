@@ -1,142 +1,129 @@
-# AppSec-Sentinel MCP Server
+# AppSec Galaxy MCP server
 
-Transform Claude Desktop into a conversational security expert with scanning, analysis, and auto-remediation.
+The FastMCP server gives ChatGPT desktop, Codex, and other MCP clients access
+to AppSec Galaxy scans, findings, reports, SBOMs, and remediation workflows.
+It exposes 16 tools and four artifact resources over stdio.
 
-## Quick Setup
+## Prerequisites
 
-### 1. Install Scanner Binaries
-
-**Required tools** (must be in system PATH):
-- **gitleaks** - Secret detection ([install](https://github.com/gitleaks/gitleaks#installing))
-- **trivy** - Dependency scanning ([install](https://trivy.dev/getting-started/installation/))
-- **semgrep** - Auto-installed with AppSec-Sentinel Python dependencies
-
-**Quick install (macOS):**
-```bash
-brew install gitleaks trivy
-```
-
-**Quick install (Linux):**
-```bash
-# Gitleaks
-wget https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_linux_amd64 -O /usr/local/bin/gitleaks
-chmod +x /usr/local/bin/gitleaks
-
-# Trivy
-sudo apt-get install trivy  # Debian/Ubuntu
-# or
-snap install trivy          # Snap
-```
-
-### 2. Configure Credentials
+From the repository root:
 
 ```bash
-cd /path/to/AppSec-Sentinel/mcp
-cp mcp_env.example mcp_env
-# Edit mcp_env with LLM provider and GitHub credentials
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e ".[web,dev]"
 ```
 
-**Required for scanning:** None - scanning works without any API keys
+Install Gitleaks, Trivy, and Syft separately for secrets, dependency, and SBOM
+features. Semgrep is installed with the Python project.
 
-**Required for auto-remediation (choose one LLM provider):**
-- **OpenAI**: `OPENAI_API_KEY`, `AI_PROVIDER=openai`, `AI_MODEL=gpt-4o-mini`
-- **Claude**: `CLAUDE_API_KEY`, `AI_PROVIDER=claude`, `AI_MODEL=claude-sonnet-4-20250514`
-- **AWS Bedrock**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `INFERENCE_PROFILE_ID`, `AI_PROVIDER=aws_bedrock`
+Set credentials in the process that launches the MCP server:
 
-**Required for PR creation:**
-- `GITHUB_TOKEN` - For creating fix PRs ([create token](https://github.com/settings/tokens))
+```bash
+export APPSEC_GALAXY_PATH="$PWD"
+export OPENAI_API_KEY="your-openai-api-key-here"  # optional until AI is used
+# Or use Claude models instead:
+# export AI_PROVIDER="anthropic"
+# export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
+export GITHUB_TOKEN="your-github-token-here"      # required only for PR creation
+```
 
-### 3. Update Claude Desktop Config
+Do not put credentials in MCP client configuration. Importing and initializing
+the server does not construct an OpenAI client or require a key.
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+## Codex configuration
+
+The repository includes this local configuration:
+
+```toml
+[mcp_servers.appsec-galaxy]
+command = ".venv/bin/python"
+args = ["mcp/appsec_galaxy_mcp_server.py"]
+```
+
+Launch Codex from the repository root so the relative paths resolve.
+
+## ChatGPT desktop configuration
+
+Add a stdio MCP server using the checkout's absolute paths:
 
 ```json
 {
   "mcpServers": {
-    "appsec-sentinel": {
-      "command": "/path/to/AppSec-Sentinel/.venv/bin/python",
-      "args": ["/path/to/AppSec-Sentinel/mcp/appsec_mcp_server.py"],
-      "cwd": "/path/to/AppSec-Sentinel",
-      "env": {
-        "PATH": "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin",
-        "PYTHONPATH": "/path/to/AppSec-Sentinel/src"
-      }
+    "appsec-galaxy": {
+      "command": "/path/to/appsec-galaxy/.venv/bin/python",
+      "args": [
+        "/path/to/appsec-galaxy/mcp/appsec_galaxy_mcp_server.py"
+      ]
     }
   }
 }
 ```
 
-> 💡 Server reads credentials from `mcp/mcp_env` automatically - no secrets in config file!
+Restart the client after updating its MCP configuration.
 
-### 4. Restart Claude Desktop
+## Tools
 
-Quit completely and reopen. Click 🔨 (hammer) icon to verify 15 AppSec-Sentinel tools appear.
+| Tool | Purpose |
+| --- | --- |
+| `scan_repository` | Start a full scan in the background |
+| `auto_remediate` | Generate constrained fixes and draft PRs |
+| `get_report` | Read the current findings summary |
+| `generate_sbom` | Generate CycloneDX/SPDX SBOMs |
+| `cross_file_analysis` | Analyze entry points, sinks, and attack paths |
+| `assess_business_impact` | Summarize risk and impact |
+| `view_report_html` | Open/read the HTML report location |
+| `get_scan_findings` | Return normalized findings with pagination |
+| `get_semgrep_findings` | Return SAST findings |
+| `get_trivy_findings` | Return dependency findings |
+| `get_gitleaks_findings` | Return secret findings |
+| `get_code_quality_findings` | Return language-linter findings |
+| `get_sbom_data` | Read generated SBOM data |
+| `health_check` | Check installation, tools, and configuration |
+| `analyze_dependency_health` | Trace package usage and maintenance health |
+| `get_dependency_usage` | Explain one package's code paths |
 
-## Usage Examples
+Every repository argument is validated before discovery or subprocess use.
+Scans run asynchronously; poll `get_scan_findings` for completion.
 
-```
-Scan nodejs-goof for security vulnerabilities
+## Resources
 
-Show cross-file analysis for WebGoat
+| URI template | Artifact |
+| --- | --- |
+| `appsec-galaxy://{repo}/report.html` | Full HTML report |
+| `appsec-galaxy://{repo}/report.sarif` | SARIF 2.1.0 log |
+| `appsec-galaxy://{repo}/sbom.cyclonedx.json` | CycloneDX SBOM |
+| `appsec-galaxy://{repo}/sbom.spdx.json` | SPDX SBOM |
 
-Auto-fix vulnerabilities in nodejs-goof and create PRs
+`{repo}` may be a repository name or a validated path. Resources return the
+current artifact under `outputs/<repository>/`.
 
-Generate SBOM for my-project
+## Optional Claude Desktop compatibility
 
-Assess business impact for vulnerabilities in WebGoat
-```
-
-## Available Tools (15 Total)
-
-### Core Tools
-| Tool | Purpose | Input | Output |
-|------|---------|-------|--------|
-| `scan_repository` | Full security scan | Repo name/path | Vulnerability counts, risk summary |
-| `auto_remediate` | LLM-powered fixes | Repo name | PR URLs for fixes |
-| `get_report` | Detailed report | Repo name | Full vulnerability breakdown |
-| `view_report_html` | Open HTML report | Repo name | Opens browser with visual report |
-| `health_check` | System diagnostics | None | Scanner availability, config status |
-
-### Analysis Tools
-| Tool | Purpose | Input | Output |
-|------|---------|-------|--------|
-| `cross_file_analysis` | Attack chain detection | Repo name | Cross-file vulnerabilities, tech stack |
-| `assess_business_impact` | Risk assessment | Repo name | Risk level, recommendations |
-| `generate_sbom` | Software BOM | Repo name | CycloneDX & SPDX summaries |
-
-## Smart Repository Discovery
-
-Use short names like `nodejs-goof` instead of full paths. Searches:
-- Current directory
-- `~/repos`, `~/projects`, `~/code`
-- Custom paths in `REPO_SEARCH_PATHS`
+Claude Desktop can use the same stdio JSON configuration shown above. This is
+an MCP compatibility option only; AppSec Galaxy's AI provider remains OpenAI.
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| "Repository not found" | Use short name (e.g., `nodejs-goof`) or full path |
-| "No tools in Claude Desktop" | Check config JSON syntax, verify Python path, restart Claude |
-| "Scan failed" | Verify scanner binaries installed (gitleaks, trivy). API keys not needed for scanning. |
-| "Scanner not found" | Install gitleaks/trivy and ensure they're in PATH |
-| "PR creation failed" | Check `GITHUB_TOKEN` has `repo` permissions, verify git user: `git config --global user.name` |
+| Symptom | Check |
+| --- | --- |
+| Server cannot find the installation | Set `APPSEC_GALAXY_PATH` or launch from the checkout |
+| No tools appear | Confirm absolute paths, JSON/TOML syntax, and restart the client |
+| Repository not found | Pass an absolute path or set `REPO_SEARCH_PATHS` |
+| AI feature unavailable | Export a valid `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY` with `AI_PROVIDER=anthropic`) in the server process |
+| PR creation unavailable | Export `GITHUB_TOKEN` with repository permissions |
+| Scanner missing | Install the external binary and confirm it is on `PATH` |
 
-## How It Works
+Smoke-test the server module without a live model call:
 
-1. MCP server loads credentials from `mcp/mcp_env` on startup
-2. Claude Desktop communicates via stdio (no network exposure)
-3. Server executes AppSec-Sentinel commands in target repo
-4. Results formatted and returned to Claude
-5. Credentials never stored in Claude config
+```bash
+env -u OPENAI_API_KEY .venv/bin/python -c '
+import importlib.util
+p = "mcp/appsec_galaxy_mcp_server.py"
+s = importlib.util.spec_from_file_location("appsec_galaxy_mcp_server", p)
+m = importlib.util.module_from_spec(s)
+s.loader.exec_module(m)
+print(m.SERVER_NAME)
+'
+```
 
-## Security
-
-- Credentials in `mcp/mcp_env` (gitignored, local only)
-- Scanning runs 100% locally (no API calls)
-- Auto-remediation uses LLM APIs (OpenAI/Claude/Bedrock)
-- PRs require manual review before merge
-
----
-
-**Open Source**: MIT Licensed
+Expected output: `appsec-galaxy`.

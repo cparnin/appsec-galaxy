@@ -1,4 +1,4 @@
-# AppSec-Sentinel Default RuboCop Configuration for Ruby
+# AppSec Galaxy Default RuboCop Configuration for Ruby
 #
 # Sensible defaults that catch real code quality issues.
 # Based on Ruby community style guide with practical adjustments.

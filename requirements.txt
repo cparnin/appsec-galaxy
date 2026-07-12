@@ -7,26 +7,32 @@
 # - Update this file quarterly or when issues arise
 
 # Security scanners
-semgrep>=1.127.0,<2.0.0  # SAST scanner - allow 1.x updates, block 2.x
+semgrep>=1.168.0,<2.0.0  # SAST scanner - allow 1.x updates, block 2.x
 
-# AI providers (primary: AWS Bedrock)
-boto3>=1.35.0,<2.0.0  # AWS SDK for Bedrock - allow 1.x updates
-openai>=1.0.0,<2.0.0  # OpenAI API (legacy) - v2+ may have breaking changes
-anthropic>=0.40.0,<2.0.0  # Anthropic Claude API - allow 1.x updates, block 2.x
+# AI provider
+openai>=2.0.0,<3.0.0  # OpenAI Responses API client
+anthropic>=0.79.0,<1.0.0  # Anthropic Messages API client
+
+# Secure XML parsing (defends against XXE in scanned untrusted XML files).
+# AppSec Galaxy scans repositories that contain pom.xml / build configs / checkstyle
+# output; the stdlib xml.etree.* is XXE-vulnerable on untrusted input.
+defusedxml>=0.7.1,<1.0.0
 
 # Core utilities
-python-dotenv>=1.0.0,<2.0.0  # Environment configuration
-requests>=2.32.0,<3.0.0  # HTTP client - v3 may have breaking changes
-gitpython>=3.1.40,<4.0.0  # Git operations
-rich>=13.0.0,<14.0.0  # Terminal UI
-jinja2>=3.1.0,<4.0.0  # Template engine
+python-dotenv>=1.2.2,<2.0.0  # Environment configuration
+pydantic-settings>=2.14.2,<3.0.0  # Typed, validated env config (appsec_galaxy/config.py)
+mcp>=1.2.0,<2.0.0  # Official MCP SDK
+requests>=2.34.2,<3.0.0  # HTTP client - v3 may have breaking changes
+gitpython>=3.1.50,<4.0.0  # Git operations
+rich>=15.0.0,<16.0.0  # Terminal UI
+jinja2>=3.1.6,<4.0.0  # Template engine
 
 # Type support
-typing-extensions>=4.10.0  # No upper bound - stdlib compatibility layer
+typing-extensions>=4.16.0  # No upper bound - stdlib compatibility layer
 
 # Testing (optional)
-pytest>=8.0.0,<9.0.0  # Unit testing
-pytest-asyncio>=0.23.0,<1.0.0  # Async test support
+pytest>=9.1.1,<10.0.0  # Unit testing
+pytest-asyncio>=1.4.0,<2.0.0  # Async test support
 
 # External tools (installed separately, not via pip):
 # - Semgrep CLI: https://semgrep.dev/docs/getting-started
@@ -36,8 +42,6 @@ pytest-asyncio>=0.23.0,<1.0.0  # Async test support
 
 # Maintenance schedule:
 # - Review quarterly for security updates
-# - Test with: ./test_all_modes.sh
+# - Test with: pytest tests/test_appsec_galaxy.py -v
 # - Update minimums when features require newer versions
 # - Update maximums when testing confirms compatibility
-
-google-generativeai>=0.3.0  # Google Gemini API

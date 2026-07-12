@@ -1,4 +1,4 @@
-title = "AppSec Scanner Secrets Rules"
+title = "AppSec Galaxy Secrets Rules"
 
 gitignore = true
 
@@ -7,7 +7,21 @@ paths = [
   '''\.venv/''',
   '''env/''',
   '''\.git/''',
-  '''__pycache__/'''
+  '''__pycache__/''',
+  # Gitleaks's own ignore file: fingerprint strings inside it look like
+  # generic secrets to the regex rules. Customer repos may have their
+  # own .gitleaksignore for the same reason.
+  '''\.gitleaksignore$''',
+  # Gitleaks config files: the rule regexes match themselves.
+  '''\.gitleaks\.toml$''',
+]
+# Run allowlist regexes against the full match: these rules capture the
+# keyword (e.g. API_KEY) as the secret group, not the value.
+regexTarget = "match"
+regexes = [
+  # Documentation placeholders ("your-openai-api-key-here" etc.) are never
+  # real secrets, in any repository.
+  '''(?i)["']your-[a-z0-9-]+-here["']''',
 ]
 
 [[rules]]

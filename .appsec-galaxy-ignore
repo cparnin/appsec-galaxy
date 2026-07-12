@@ -1,0 +1,5 @@
+# Intentional fake-secret fixtures used by the test suite.
+gitleaks:hardcoded-password:tests/conftest.py
+gitleaks:generic-secret:tests/conftest.py
+gitleaks:aws-access-key:tests/test_appsec_galaxy.py
+gitleaks:generic-secret:tests/test_appsec_galaxy.py

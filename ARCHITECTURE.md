@@ -1,329 +1,163 @@
-# AppSec-Sentinel Architecture
+# AppSec Galaxy architecture
 
-## Output Structure: Multi-Repo/Branch Design
+AppSec Galaxy is a local-first application security pipeline. Deterministic
+scanners produce the primary evidence; optional AI analysis (OpenAI or Anthropic) adds semantic
+and cross-file context without becoming a prerequisite for rule-based results.
 
-### Directory Layout
-```
-outputs/
-  └── {repo_name}/
-      └── {branch}/
-          ├── raw/                    # Scanner JSON outputs
-          │   ├── semgrep.json       # SAST findings
-          │   ├── gitleaks.json      # Secret detection
-          │   ├── trivy-sca.json     # Dependency vulnerabilities
-          │   └── eslint.json        # Code quality (JS/TS)
-          ├── sbom/                   # SBOM compliance files
-          │   ├── sbom.cyclonedx.json
-          │   └── sbom.spdx.json
-          ├── report.html             # Interactive HTML report
-          └── pr-findings.txt         # PR summary for auto-remediation
+## Pipeline
+
+```mermaid
+flowchart LR
+    A["Repository selection and validation"] --> B["Rule-based scanners"]
+    B --> C["Normalize findings"]
+    C --> D["Baseline and diff filters"]
+    D --> E["Cross-file analysis"]
+    E --> F["Optional AI enrichment"]
+    F --> G["HTML, SARIF, SBOM, history"]
+    G --> H["Optional constrained remediation"]
 ```
 
-### Smart Path Resolution (`src/path_utils.py`)
+1. CLI, web, Action, or MCP validates the repository boundary.
+2. Semgrep, Gitleaks, Trivy, and available quality scanners run without a
+   shell and emit their native result shapes.
+3. Finding helpers normalize paths, rule IDs, severity, messages, and lines.
+4. `.appsec-galaxy-ignore` and PR-diff scoping filter findings. Both fail open.
+5. Structural cross-file analysis traces entry points, sinks, and attack paths.
+6. If enabled, the shared AI boundary validates or enriches results.
+7. Reports, SBOMs, and trend history are written under the repository output.
+8. Remediation may propose and apply safe single-line replacements before
+   creating a draft pull request.
 
-**Git Context Detection:**
-```python
-get_git_context(repo_path) → {'repo': 'org_reponame', 'branch': 'main'}
+## Package layout
+
+```text
+src/appsec_galaxy/
+├── main.py                  # CLI and scan orchestration
+├── web_app.py               # local Flask interface
+├── scanners/                # security and quality scanner adapters
+├── ai_cross_file.py         # optional semantic cross-file enrichment
+├── cross_file_analyzer.py   # deterministic cross-file analysis
+├── auto_remediation/        # safety checks, fixes, and PR workflow
+├── reporting/               # HTML, SARIF, and summary generation
+├── scan_filters.py          # baseline and diff filters
+├── path_utils.py            # repository output paths and retention
+└── project_paths.py         # checkout resource locations
 ```
 
-**Automatic Discovery:**
-1. Extracts repo name from `git remote origin url`
-2. Gets current branch from `git rev-parse --abbrev-ref HEAD`
-3. Sanitizes special characters (e.g., `feature/auth` → `feature_auth`)
-4. Falls back to directory name + "main" for non-git repos
+Scanner configuration lives under `configs/`. The MCP server, CI gates, and
+client workflow remain outside the import package so their operational
+boundaries stay explicit.
 
-**Path Generation:**
-```python
-get_output_path(repo_path, base_output_dir="outputs")
-# Returns: outputs/{repo_name}/{branch}/
+## Output layout
+
+`project_paths.py` anchors bundled resources and outputs to the checkout root.
+`path_utils.get_output_path()` assigns one canonical directory per scanned
+repository:
+
+```text
+outputs/<repository>/
+├── raw/
+│   ├── semgrep.json
+│   ├── gitleaks.json
+│   └── trivy-sca.json
+├── sbom/
+│   ├── sbom.cyclonedx.json
+│   └── sbom.spdx.json
+├── report.html
+├── report.sarif
+└── history.json
 ```
 
-**Cleanup Strategy:**
-```python
-cleanup_old_scans(output_path)
-# Removes all existing content in branch directory
-# Keeps only the most recent scan per branch
-```
-
-## Integration Points
-
-### CLI Mode (`src/main.py`)
-```python
-output_path = get_output_path(repo_path, BASE_OUTPUT_DIR)
-cleanup_old_scans(output_path)
-output_dirs = setup_output_directories(output_path)
-output_dir = output_dirs['base']  # Use this for all operations
-```
-
-### Web Mode (`src/web_app.py`)
-```python
-# Same path resolution as CLI
-output_path = get_output_path(str(validated_path), BASE_OUTPUT_DIR)
-LAST_SCAN_OUTPUT_DIR = output_dir  # Track for report serving
-```
-
-### CI/CD Mode (GitHub Actions)
-- Uses `run_auto_mode()` which automatically applies repo/branch structure
-- Works with `GITHUB_WORKSPACE` environment variable
-- No configuration changes needed in `action.yml`
-
-### MCP Server (`mcp/appsec_mcp_server.py`)
-```python
-def _get_repo_output_path(self, repo_path):
-    """Get the output path for a specific repository using new structure"""
-    if self.get_output_path:
-        output_path = self.get_output_path(repo_path, self.base_output_dir)
-        return str(output_path)
-    else:
-        # Fallback to old flat structure for backward compatibility
-        return os.path.join(self.ix_guard_path, "outputs")
-```
-
-## Key Benefits
-
-**Multi-Repository Support:**
-- Scan multiple repos concurrently without conflicts
-- Each repo has isolated output namespace
-
-**Branch-Aware Security Tracking:**
-- Compare security posture: `main` vs `feature-branch` vs `release`
-- Historical tracking: "Has this branch improved?"
-- Natural CI/CD mapping: Works with `${{ github.repository }}` and `${{ github.ref_name }}`
-
-**Automatic Cleanup:**
-- Only keeps most recent scan per branch
-- Prevents disk space accumulation
-- No manual maintenance required
-
-**Zero Breaking Changes:**
-- All existing functionality preserved
-- Backward compatible fallback for older versions
-- Same API surface for all consumers
-
-## Implementation Details
-
-### Path Sanitization
-```python
-sanitize_path_component("feature/auth-fix")  # → "feature_auth-fix"
-sanitize_path_component("my-org/my-repo")    # → "my-org_my-repo"
-```
-
-**Handles:**
-- Forward/backward slashes (path separators)
-- Special filesystem characters (`<>:"|?*`)
-- Leading/trailing dots and spaces
-- Empty strings (fallback to "unknown")
-
-### Git Context Extraction
-
-**Repository Name:**
-```bash
-# From remote URL: git@github.com:user/repo.git
-→ "user_repo"
-
-# From remote URL: https://github.com/org/project.git
-→ "org_project"
-
-# No remote configured → directory name
-→ "repo-directory-name"
-```
-
-**Branch Name:**
-```bash
-git rev-parse --abbrev-ref HEAD  # → "main", "feature/new-auth", etc.
-```
-
-**Timeout Protection:** 5-second timeout on all git commands to prevent hangs
-
-### Directory Setup Flow
-
-```python
-# 1. Determine output path based on git context
-output_path = get_output_path(repo_path)
-# → outputs/cparnin_nodejs-goof/main/
-
-# 2. Clean up old scans (keeps only most recent)
-cleanup_old_scans(output_path)
-
-# 3. Create directory structure
-output_dirs = setup_output_directories(output_path)
-# Creates: base/, raw/, sbom/
-
-# 4. Use throughout scan
-all_findings = run_security_scans(repo_path, scanners, output_dirs['base'])
-generate_html_report(findings, summary, str(output_dirs['base']), repo_path)
-```
-
-## Deployment Modes Matrix
-
-| Mode | Path Resolution | Cleanup | Notes |
-|------|----------------|---------|-------|
-| **CLI** | ✅ Git-aware | ✅ Auto | Interactive repo selection |
-| **Web** | ✅ Git-aware | ✅ Auto | Tracks last scan for serving |
-| **CI/CD** | ✅ Git-aware | ✅ Auto | Uses `GITHUB_WORKSPACE` |
-| **MCP** | ✅ Git-aware | ✅ Auto | Fallback for compatibility |
-
-## Performance Characteristics
-
-**Git Operations:** O(1) - Single remote lookup, single branch check
-**Cleanup:** O(n) - Linear in number of files per branch (typically < 100)
-**Path Resolution:** O(1) - String operations only
-
-**Typical Overhead:** < 50ms per scan initialization
-
-## Error Handling
-
-**Git Failures:**
-- Timeout → Use directory name + "main"
-- No .git directory → Use directory name + "main"
-- No remote configured → Use directory name + current branch
-
-**Filesystem Errors:**
-- Permission denied → Propagate to caller
-- Disk full → Propagate to caller
-- Path too long (>4096) → Validation error
-
-**Result:** Graceful degradation - always produces valid output path
-
-## Adding New Scanners/Linters
-
-### Future-Proof Scanner Pattern
-
-**✅ All current and future scanners automatically work with repo/branch structure!**
-
-**Standard Scanner Signature:**
-```python
-def run_scanner(repo_path: str, output_dir: str = None) -> list:
-    """
-    Args:
-        repo_path: Path to repository
-        output_dir: Output directory (repo/branch-aware path provided by AppSec-Sentinel)
-
-    Returns:
-        list: Standardized findings
-    """
-    # 1. Handle output_dir parameter
-    if output_dir is None:
-        output_path = Path("../outputs/raw").resolve()
-    else:
-        output_path = Path(output_dir).resolve()
-
-    # 2. Ensure directory exists
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # 3. Write to output_dir / "scanner_name.json"
-    output_file = output_path / "scanner_name.json"
-
-    # 4. Run scanner, parse results, return findings
-    # ...
-```
-
-### Why This Works
-
-**Automatic Compatibility:**
-- AppSec-Sentinel passes correct `output_dir` for repo/branch
-- Scanner writes to that directory
-- All modes (CLI/Web/CI/CD/MCP) get correct path automatically
-
-**Example Flow:**
-```python
-# AppSec-Sentinel determines path
-output_path = get_output_path(repo_path)  # → outputs/nodejs-goof/main/
-
-# Scanner receives this path
-run_eslint(repo_path, str(output_path / "raw"))
-
-# Scanner writes to: outputs/nodejs-goof/main/raw/eslint.json
-```
-
-### Adding a New Scanner
-
-**Reference Implementation:** See `src/scanners/eslint.py` or `src/scanners/pylint.py`
-
-**Steps:**
-1. Copy existing scanner (e.g., `eslint.py`)
-2. Implement scanner-specific logic
-3. Add import to `src/main.py`
-4. Add to scanner pipeline with language detection
-5. Update MCP parser (1 JSON parse block)
-
-**That's it!** - Output path handling is automatic
-
-### Current Scanners (All Compatible)
-
-| Scanner | Type | Output File | Status |
-|---------|------|-------------|--------|
-| Semgrep | SAST | semgrep.json | ✅ Compatible |
-| Gitleaks | Secrets | gitleaks.json | ✅ Compatible |
-| Trivy | Dependencies | trivy-sca.json | ✅ Compatible |
-| ESLint | Code Quality | eslint.json | ✅ Compatible |
-| Pylint | Code Quality | pylint.json | ✅ Compatible |
-| Checkstyle | Code Quality | checkstyle.json | ✅ Compatible |
-| golangci-lint | Code Quality | golangci-lint.json | ✅ Compatible |
-| RuboCop | Code Quality | rubocop.json | ✅ Compatible |
-| Clippy | Code Quality | clippy.json | ✅ Compatible |
-| PHPStan | Code Quality | phpstan.json | ✅ Compatible |
-
-**Future Scanners:** Automatically compatible if they follow the template pattern
-
-## Future Enhancements
-
-**Potential Additions:**
-- Scan history: Keep last N scans per branch (configurable retention)
-- Cross-branch diff: Compare security findings across branches
-- Trend analysis: Track vulnerability counts over time
-- API endpoint: List available scans by repo/branch
-- Threat model versioning: Track architecture changes over time
-- Custom threat frameworks: Support PASTA, VAST, OCTAVE
-
-**Extension Points:**
-```python
-# src/path_utils.py
-def list_available_scans(base_output_dir: str = "outputs") -> Dict[str, Dict[str, Path]]
-# Already implemented - returns all scans organized by repo/branch
-```
-
-## Testing Strategy
-
-**Unit Tests:** (TODO)
-- Path sanitization edge cases
-- Git context extraction with various URL formats
-- Fallback behavior for non-git repos
-
-**Integration Tests:** (TODO)
-- Full scan with repo/branch structure
-- Concurrent scans of different repos
-- Branch switching during scans
-
-**Verification:**
-```bash
-# Manual verification
-python3 -c "
-import sys; sys.path.insert(0, 'src')
-from path_utils import get_output_path
-print(get_output_path('/path/to/repo', 'outputs'))
-"
-# Expected: outputs/{repo_name}/{branch}/
-```
-
-## Backward Compatibility
-
-**MCP Server:**
-```python
-# Tries new path structure first
-if self.get_output_path:
-    return self.get_output_path(repo_path, self.base_output_dir)
-else:
-    # Fallback to old structure
-    return os.path.join(self.ix_guard_path, "outputs")
-```
-
-**Legacy Output Structure:** `outputs/` (flat) → Still accessible via fallback
-
-**Migration Path:** None required - automatically adopts new structure on next scan
-
----
-
-**Version:** 1.4.0
-**Last Updated:** 2025-01-XX
-**Status:** Production Ready
+The current scan replaces older artifacts while `history.json` survives for
+trend comparison. Retention periodically purges inactive repository output
+directories. Raw output may contain sensitive material and is Git-ignored.
+
+## AI call boundary
+
+`scanners/ai_scanner.py` owns provider validation, model selection, the cached
+SDK wrapper, provider API requests (OpenAI Responses API or Anthropic Messages
+API), retry policy, usage accounting, and cost estimation. Other modules reuse
+`_get_ai_client()`, `_get_model_id()`, and `_call_ai()` rather than
+constructing SDK clients. `test_ai_connection()` performs a minimal live call
+so the CLI can validate a provider before starting work.
+
+The call contract keeps stable instructions separate (OpenAI `instructions`,
+Anthropic `system`) from dynamic code or finding data. Only transient network,
+timeout, rate-limit, and server failures are retried, for at most three
+attempts. Missing or malformed verification output preserves original
+findings. Cross-file and report-summary wrappers preserve deterministic/static
+results when optional AI work fails.
+
+Default depth mapping:
+
+| Depth | OpenAI | Anthropic | Max output tokens |
+| --- | --- | --- | ---: |
+| quick | `gpt-5.6-luna` | `claude-haiku-4-5` | 4096 |
+| standard | `gpt-5.6-terra` | `claude-sonnet-5` | 4096 |
+| deep | `gpt-5.6-sol` | `claude-opus-4-8` | 8192 |
+
+## Remediation boundary
+
+Auto-remediation operates only on supported findings and text files. It rejects
+secrets, protected paths, traversal, oversized/binary input, invalid package or
+version strings, multi-line model output, and replacements over the configured
+limit. A replacement inherits the original line indentation. Git and package
+manager subprocesses use argument arrays and validated inputs.
+
+AI output is a proposal, not trusted code. Generated pull requests remain
+review artifacts and must pass the target repository's tests before merge.
+
+## MCP boundary
+
+`mcp/appsec_galaxy_mcp_server.py` provides a lazy `AppSecGalaxyMCPCore`.
+Importing or initializing it locates the checkout and output utilities but does
+not construct an AI client. Tool calls resolve and validate repositories at
+the boundary, then invoke package entrypoints with the server process
+environment.
+
+The server identity is `appsec-galaxy`. Its 16 tools cover scanning,
+remediation, reports, SBOMs, cross-file/business analysis, per-tool findings,
+health, and dependency analysis. Four resources expose report and SBOM
+artifacts through `appsec-galaxy://{repo}/...` templates.
+
+## Scanner extension pattern
+
+New scanner adapters should:
+
+1. validate the external executable and repository path;
+2. use `subprocess.run([...], shell=False)` with a bounded timeout;
+3. write raw output only under the supplied output directory;
+4. normalize findings without mutating another scanner's schema;
+5. fail gracefully when an optional tool is unavailable;
+6. include focused parser, timeout, missing-tool, and malicious-input tests;
+7. register in orchestration and update public documentation.
+
+Quality scanners extend `QualityScannerBase` when possible so bundled config
+fallback and finding normalization remain consistent.
+
+## Security invariants
+
+- Scanned files, filenames, scanner output, findings, and model output are
+  untrusted.
+- Paths are resolved and checked against repository boundaries before access.
+- Secrets are never persisted in configuration, logs, history, examples, or
+  MCP client settings.
+- XML from scanned repositories is parsed with hardened libraries.
+- HTML rendering autoescapes finding content.
+- Baseline/diff failures and AI verification failures never hide findings.
+- Output stays local, ignored, and retention-controlled.
+- MCP initialization is offline; model access happens only in explicit AI
+  features.
+- CI uses pinned third-party actions and blocking test/lint/type gates.
+
+## Key decisions
+
+- Source-layout packaging prevents checkout-relative import ambiguity.
+- One shared AI boundary supports two providers (OpenAI default, Anthropic
+  opt-in), keeping configuration and retry logic in a single module.
+- Rule-based results are authoritative; AI enrichment is optional and
+  failure-tolerant.
+- One current output per repository keeps MCP and CI artifact discovery
+  deterministic.
+- The identity migration is a cutover: old names, aliases, resource schemes,
+  baseline filenames, and credential paths are not compatibility surfaces.

@@ -1,11 +1,11 @@
 #!/bin/bash
-# AppSec AI Scanner - Web Interface Launcher
-# Enhanced startup script with dependency checking and auto-browser launch
+# AppSec Galaxy - Web Interface Launcher
+# Sets up venv, installs deps, validates scanners, then starts the Flask app.
 
 set -euo pipefail
 
-echo "🔒 AppSec Sentinel - Web Interface"
-echo "=================================="
+echo "🔒 AppSec Galaxy  ·  Web Interface"
+echo "=========================="
 
 # Function to check if command exists
 command_exists() {
@@ -17,17 +17,17 @@ port_in_use() {
     lsof -ti:8000 >/dev/null 2>&1
 }
 
-# Select a supported Python interpreter (<= 3.12)
+# Select a supported Python interpreter (3.11-3.13, matching CI)
 echo "🔍 Checking prerequisites..."
 
-SUPPORTED_PYTHONS=(python3.12 python3.11 python3)
+SUPPORTED_PYTHONS=(python3.13 python3.12 python3.11 python3)
 PYTHON_CMD=""
 
 for candidate in "${SUPPORTED_PYTHONS[@]}"; do
     if command_exists "$candidate"; then
         if "$candidate" - <<'PY'
 import sys
-sys.exit(0 if (sys.version_info.major == 3 and sys.version_info.minor <= 12) else 1)
+sys.exit(0 if (sys.version_info.major == 3 and 11 <= sys.version_info.minor <= 13) else 1)
 PY
         then
             PYTHON_CMD="$candidate"
@@ -47,7 +47,7 @@ echo "✅ Using Python interpreter: $PYTHON_CMD ($($PYTHON_CMD --version | head 
 if [ -d ".venv" ] && [ -x ".venv/bin/python" ]; then
     if ! .venv/bin/python - <<'PY'
 import sys
-sys.exit(0 if (sys.version_info.major == 3 and sys.version_info.minor <= 12) else 1)
+sys.exit(0 if (sys.version_info.major == 3 and 11 <= sys.version_info.minor <= 13) else 1)
 PY
     then
         echo "⚠️  Existing .venv uses unsupported Python $(.venv/bin/python -c 'import sys; print(sys.version.split()[0])'). Recreating..."
@@ -59,7 +59,7 @@ fi
 if [ ! -f ".env" ]; then
     echo "⚠️  No .env file found. You'll need to add your API key:"
     echo "   cp env.example .env"
-    echo "   # Then edit .env to add OPENAI_API_KEY or CLAUDE_API_KEY"
+    echo "   # Then edit .env to add OPENAI_API_KEY"
     echo ""
 fi
 
@@ -79,8 +79,9 @@ source .venv/bin/activate
 # Check and install dependencies
 echo "📋 Ensuring Python dependencies are installed..."
 
-pip install --upgrade pip >/dev/null 2>&1
-pip install --upgrade -q -r requirements.txt -r requirements-web.txt 2>&1 | grep -v "already satisfied" | grep -v "Requirement already" || true
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install --upgrade -e '.[web]'
+.venv/bin/python -c "import appsec_galaxy"
 
 echo "✅ Python dependencies ready"
 
@@ -109,7 +110,7 @@ fi
 # Python - Pylint (auto-install to venv)
 if ! .venv/bin/python -c "import pylint" 2>/dev/null; then
     echo "   📦 Installing Pylint for Python code quality..."
-    if .venv/bin/pip install pylint 2>&1 | grep -q "Successfully installed\|Requirement already satisfied"; then
+    if .venv/bin/python -m pip install pylint 2>&1 | grep -q "Successfully installed\|Requirement already satisfied"; then
         echo "   ✅ Pylint installed successfully"
         available_linters+=("Pylint")
     else
@@ -166,7 +167,7 @@ echo ""
 echo "✨ Features:"
 echo "   📁 Repository picker with auto-discovery"
 echo "   🔍 SAST, Secrets, and Dependency scanning"
-echo "   🤖 LLM-powered auto-remediation (optional)"
+echo "   🤖 AI-powered auto-remediation"
 echo "   📊 Visual reports and downloads"
 echo ""
 echo "🎯 Usage:"
@@ -192,4 +193,4 @@ fi
 
 # Start the web server
 echo "🔄 Starting web server..."
-cd src && python web_app.py
+python -m appsec_galaxy.web_app

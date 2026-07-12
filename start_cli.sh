@@ -1,10 +1,10 @@
 #!/bin/bash
-# AppSec-Sentinel - CLI Mode Launcher
+# AppSec Galaxy - CLI Mode Launcher
 # Auto-manages virtualenv and dependencies
 
 set -euo pipefail
 
-echo "🔒 AppSec-Sentinel - CLI Mode"
+echo "🔒 AppSec Galaxy - CLI Mode"
 echo "=================================="
 
 # Function to check if command exists
@@ -12,17 +12,17 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Select a supported Python interpreter (<= 3.12)
+# Select a supported Python interpreter (3.11-3.13, matching CI)
 echo "🔍 Checking prerequisites..."
 
-SUPPORTED_PYTHONS=(python3.12 python3.11 python3)
+SUPPORTED_PYTHONS=(python3.13 python3.12 python3.11 python3)
 PYTHON_CMD=""
 
 for candidate in "${SUPPORTED_PYTHONS[@]}"; do
     if command_exists "$candidate"; then
         if "$candidate" - <<'PY'
 import sys
-sys.exit(0 if (sys.version_info.major == 3 and sys.version_info.minor <= 12) else 1)
+sys.exit(0 if (sys.version_info.major == 3 and 11 <= sys.version_info.minor <= 13) else 1)
 PY
         then
             PYTHON_CMD="$candidate"
@@ -42,7 +42,7 @@ echo "✅ Using Python interpreter: $PYTHON_CMD ($($PYTHON_CMD --version | head 
 if [ -d ".venv" ] && [ -x ".venv/bin/python" ]; then
     if ! .venv/bin/python - <<'PY'
 import sys
-sys.exit(0 if (sys.version_info.major == 3 and sys.version_info.minor <= 12) else 1)
+sys.exit(0 if (sys.version_info.major == 3 and 11 <= sys.version_info.minor <= 13) else 1)
 PY
     then
         echo "⚠️  Existing .venv uses unsupported Python $(.venv/bin/python -c 'import sys; print(sys.version.split()[0])'). Recreating..."
@@ -54,7 +54,7 @@ fi
 if [ ! -f ".env" ]; then
     echo "⚠️  No .env file found. You'll need to add your API key for auto-remediation:"
     echo "   cp env.example .env"
-    echo "   # Then edit .env to add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+    echo "   # Then edit .env to add OPENAI_API_KEY"
     echo ""
 fi
 
@@ -74,8 +74,9 @@ source .venv/bin/activate
 # Check and install dependencies
 echo "📋 Ensuring Python dependencies are installed..."
 
-pip install --upgrade pip >/dev/null 2>&1
-pip install --upgrade -q -r requirements.txt 2>&1 | grep -v "already satisfied" | grep -v "Requirement already" || true
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install --upgrade -e .
+.venv/bin/python -c "import appsec_galaxy"
 
 echo "✅ Python dependencies ready"
 
@@ -105,7 +106,7 @@ fi
 # Python - Pylint (auto-install to venv)
 if ! .venv/bin/python -c "import pylint" 2>/dev/null; then
     echo "   📦 Installing Pylint for Python code quality..."
-    if .venv/bin/pip install pylint 2>&1 | grep -q "Successfully installed\|Requirement already satisfied"; then
+    if .venv/bin/python -m pip install pylint 2>&1 | grep -q "Successfully installed\|Requirement already satisfied"; then
         echo "   ✅ Pylint installed successfully"
         available_linters+=("Pylint")
     else
@@ -152,12 +153,12 @@ echo "✨ Features:"
 echo "   📁 Interactive repository selection"
 echo "   🎯 Severity level selection (Critical/High or All)"
 echo "   🔍 SAST, Secrets, and Dependency scanning"
-echo "   🤖 LLM-powered auto-remediation with PR creation (optional)"
+echo "   🤖 AI-powered auto-remediation with PR creation"
 echo "   📊 HTML reports with business impact analysis"
 echo "   📋 SBOM generation (CycloneDX & SPDX)"
 echo ""
-echo "🚀 Starting AppSec-Sentinel CLI..."
+echo "🚀 Starting AppSec Galaxy CLI..."
 echo ""
 
 # Launch CLI
-cd src && python main.py
+python -m appsec_galaxy.main

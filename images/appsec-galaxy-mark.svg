@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- AppSec Galaxy brandmark: spiral galaxy, tuned for use as a dark-mode
+       backdrop watermark (bright strokes, transparency handled by the page). -->
+  <defs>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e0e7ff"/>
+      <stop offset="45%" stop-color="#a5b4fc"/>
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arm" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.25"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Spiral arms: two logarithmic-ish sweeps, mirrored -->
+  <g stroke="url(#arm)" stroke-linecap="round" fill="none">
+    <path d="M256 256
+             C 300 240, 330 260, 332 300
+             C 334 356, 288 400, 224 402
+             C 140 405, 76 340, 78 252
+             C 80 148, 168 68, 278 74"
+          stroke-width="14" opacity="0.85"/>
+    <path d="M256 256
+             C 212 272, 182 252, 180 212
+             C 178 156, 224 112, 288 110
+             C 372 107, 436 172, 434 260
+             C 432 364, 344 444, 234 438"
+          stroke-width="14" opacity="0.85"/>
+    <path d="M256 256
+             C 288 246, 306 258, 308 284
+             C 310 320, 280 348, 238 350
+             C 182 352, 140 308, 142 250"
+          stroke-width="9" opacity="0.6"/>
+    <path d="M256 256
+             C 224 266, 206 254, 204 228
+             C 202 192, 232 164, 274 162
+             C 330 160, 372 204, 370 262"
+          stroke-width="9" opacity="0.6"/>
+  </g>
+
+  <!-- Galactic core -->
+  <circle cx="256" cy="256" r="74" fill="url(#core)"/>
+  <circle cx="256" cy="256" r="20" fill="#eef2ff"/>
+
+  <!-- Star field -->
+  <g fill="#c7d2fe">
+    <circle cx="96" cy="118" r="4"/>
+    <circle cx="424" cy="96" r="3"/>
+    <circle cx="452" cy="330" r="4"/>
+    <circle cx="120" cy="412" r="3"/>
+    <circle cx="368" cy="416" r="2.5"/>
+    <circle cx="58" cy="268" r="2.5"/>
+    <circle cx="330" cy="52" r="2.5"/>
+    <circle cx="196" cy="66" r="2"/>
+    <circle cx="470" cy="196" r="2"/>
+    <circle cx="216" cy="452" r="2"/>
+  </g>
+  <!-- Four-point sparkles -->
+  <g fill="#e0e7ff">
+    <path d="M400 150 l4 12 12 4 -12 4 -4 12 -4 -12 -12 -4 12 -4 z"/>
+    <path d="M112 330 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 z"/>
+  </g>
+</svg>

@@ -1,0 +1,86 @@
+name: Security Scan
+
+# Copy this file to: .github/workflows/security-scan.yml
+# Drop-in workflow for client repositories.
+# One repository secret required: OPENAI_API_KEY
+# (https://platform.openai.com/api-keys)
+# Prefer Claude? Set ai-provider: 'anthropic' and provide ANTHROPIC_API_KEY
+# (https://console.anthropic.com/settings/keys) instead.
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: write
+
+jobs:
+  security-scan:
+    name: AppSec Security Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          
+      - name: Run AppSec Galaxy
+        id: scanner
+        timeout-minutes: 8
+        uses: cparnin/appsec-galaxy@v2.2.2  # Pinned release; bump deliberately when upgrading
+        env:
+          GH_TOKEN: ${{ github.token }}  # GitHub CLI expects GH_TOKEN in Actions
+          #APPSEC_AUTO_FIX_DELAY: '2'  # Optional: Add 2-second delay between fixes to prevent API rate limiting
+          #APPSEC_DEBUG: 'true'        # Enable to see Semgrep version and debug info
+          #APPSEC_LOG_LEVEL: 'DEBUG'   # Show detailed debugging information
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # ai-provider: 'anthropic'                              # Optional: use Claude models
+          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # Required when ai-provider is anthropic
+          ai-model: ''
+          auto-fix: 'true'
+          # auto-fix-mode: '3'  # Optional: 1=SAST+secrets, 2=dependencies, 3=both, 4=skip
+          fail-on-critical: 'false'
+          scan-level: 'critical-high'
+          # code-quality: 'true'  # Optional: Set to 'false' to disable code quality scanning (enabled by default)
+          # dependency-analysis: 'true'  # Optional: Set to 'false' to disable dependency code-path analysis
+          
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const totalFindings = '${{ steps.scanner.outputs.total-findings }}';
+            const criticalFindings = '${{ steps.scanner.outputs.critical-findings }}';
+            const highFindings = '${{ steps.scanner.outputs.high-findings }}';
+            const secretsFound = '${{ steps.scanner.outputs.secrets-found }}';
+            
+            let comment = '## 🔒 Security Scan Results\n\n';
+            comment += `**Total Findings:** ${totalFindings}\n`;
+            comment += `**Critical:** ${criticalFindings}\n`;
+            comment += `**High:** ${highFindings}\n`;
+            comment += `**Secrets:** ${secretsFound}\n\n`;
+            
+            if (parseInt(criticalFindings) > 0 || parseInt(secretsFound) > 0) {
+              comment += '❌ **Action Required:** Critical security issues found!\n\n';
+            } else if (parseInt(highFindings) > 0) {
+              comment += '⚠️ **Review Recommended:** High severity issues found.\n\n';
+            } else {
+              comment += '✅ **All Clear:** No critical security issues detected.\n\n';
+            }
+            
+            comment += `📊 [View detailed reports](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n`;
+            comment += '*Powered by AppSec Galaxy*';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            }); 
