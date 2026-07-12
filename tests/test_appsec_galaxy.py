@@ -3372,7 +3372,12 @@ class TestMachineFacingIdentity:
             assert legacy not in (tests_workflow + self_scan).lower()
 
     def test_codex_mcp_config_has_no_embedded_environment(self, root):
-        source = (root / '.codex' / 'config.toml').read_text()
+        # .codex/ is gitignored local tooling; the file exists only on dev
+        # machines. When present it must stay credential-free.
+        config_path = root / '.codex' / 'config.toml'
+        if not config_path.exists():
+            pytest.skip('.codex/config.toml is local-only and absent here')
+        source = config_path.read_text()
         config = tomllib.loads(source)
         server = config['mcp_servers']['appsec-galaxy']
         assert '[mcp_servers.appsec-galaxy]' in source
