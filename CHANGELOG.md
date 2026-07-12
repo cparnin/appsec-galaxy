@@ -5,6 +5,8 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.3.0] - 2026-07-12
+
 ### Changed
 
 - Renamed the project, package, command, MCP server, resources, GitHub Action,
@@ -41,6 +43,9 @@ semantic versioning.
 
 ### Fixed
 
+- LICENSE now names AppSec Galaxy (was the pre-migration project name).
+- Former-identity strings removed everywhere; banned terms live rot13-encoded
+  in the identity tests.
 - Usage analytics no longer crash silently on `datetime.UTC` misuse and now
   report the real package version.
 - Skipping auto-fix (mode 4) through the web interface no longer returns a
