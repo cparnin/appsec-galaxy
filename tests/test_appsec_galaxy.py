@@ -11,6 +11,7 @@ Run: pytest tests/test_appsec_galaxy.py -v
 """
 
 import pytest
+import codecs
 import json
 import subprocess
 import os
@@ -3350,12 +3351,10 @@ class TestMachineFacingIdentity:
         assert 'OPENAI_API_KEY: ${{ inputs.openai-api-key }}' in source
         assert 'ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}' in source
         assert 'AI_MODEL: ${{ inputs.ai-model }}' in source
-        for legacy in (
-            'bed' + 'rock',
-            'aws-' + 'access-key',
-            'inference-' + 'profile',
-            'tek' + 'stream',
-        ):
+        # rot13-encoded so the banned identities never appear in the tree,
+        # not even as recognizable fragments.
+        for encoded in ('orqebpx', 'njf-npprff-xrl', 'vasrerapr-cebsvyr', 'grxfgernz'):
+            legacy = codecs.decode(encoded, 'rot13')
             assert legacy not in source.lower()
 
     def test_workflow_quality_gates_and_self_scan_secret(self, root):
@@ -3367,7 +3366,9 @@ class TestMachineFacingIdentity:
         assert 'secrets.OPENAI_API_KEY' in self_scan
         assert 'APPSEC_AUTO_FIX: "false"' in self_scan
         assert 'APPSEC_AUTO_FIX_MODE: "4"' in self_scan
-        for legacy in ('anth' + 'ropic', 'bed' + 'rock', 'ir' + 'is'):
+        # rot13-encoded banned identities (see note in the action test above)
+        for encoded in ('naguebcvp', 'orqebpx', 'vevf'):
+            legacy = codecs.decode(encoded, 'rot13')
             assert legacy not in (tests_workflow + self_scan).lower()
 
     def test_codex_mcp_config_has_no_embedded_environment(self, root):
@@ -3390,9 +3391,9 @@ class TestMachineFacingIdentity:
             )
         )
         assert '.appsec-galaxy-ignore' in source
-        assert '.' + 'iris-ignore' not in source
+        assert codecs.decode('.vevf-vtaber', 'rot13') not in source
         assert (root / '.appsec-galaxy-ignore').is_file()
-        assert not (root / ('.' + 'iris-ignore')).exists()
+        assert not (root / codecs.decode('.vevf-vtaber', 'rot13')).exists()
 
 
 class TestPostScanPipeline:
@@ -3788,7 +3789,7 @@ class TestRepoDiscoveryScope:
         monkeypatch.setenv('APPSEC_ENABLE_DIRECTORY_BROWSING', 'true')
         monkeypatch.delenv('REPO_SEARCH_PATHS', raising=False)
         # Fake home with a repos dir and a noisy Documents dir
-        (tmp_path / 'repos' / 'tek').mkdir(parents=True)
+        (tmp_path / 'repos' / 'sandbox').mkdir(parents=True)
         (tmp_path / 'Documents' / 'TaxReturns2025').mkdir(parents=True)
         (tmp_path / 'Desktop' / 'RandomApp.app').mkdir(parents=True)
         from appsec_galaxy import web_app
@@ -3800,7 +3801,7 @@ class TestRepoDiscoveryScope:
         resp = client.get('/discover-repos')
         assert resp.status_code == 200
         names = {r['name'] for r in resp.get_json()['repositories']}
-        assert 'tek' in names
+        assert 'sandbox' in names
         assert 'TaxReturns2025' not in names
         assert 'RandomApp.app' not in names
 

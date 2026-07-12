@@ -38,7 +38,7 @@ _EPSS_HIGH_THRESHOLD = 0.1
 
 
 def _kev_cache_path() -> str:
-    return os.path.join(tempfile.gettempdir(), "iris_kev_cache.json")
+    return os.path.join(tempfile.gettempdir(), "appsec_galaxy_kev_cache.json")
 
 
 def fetch_epss_scores(cve_ids: list[str]) -> dict[str, float]:

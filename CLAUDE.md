@@ -73,8 +73,9 @@ as the source of truth for how to work on AppSec Galaxy.
     delete published tags.
 
 11. **Commit locally; the user pushes unless they say otherwise.**
-    Never force-push, never rewrite published history, never touch
-    `/Users/cparnin/repos/tek/iris` (read-only reference checkout).
+    Never force-push, never rewrite published history, never touch the
+    private upstream reference checkout (read-only; its path lives in
+    Claude's project memory, deliberately not in this repository).
 
 ## Project Overview
 
@@ -257,10 +258,12 @@ check the printed per-scan cost and `ai_scan.json` token usage.
 
 ## Recent History (context for why things are the way they are)
 
-- 2026-07-11: Migrated from the private work project "iris" (tekstream) to
-  personal AppSec Galaxy. Renamed package/CLI/MCP/action, OpenAI as default
-  provider, then added Anthropic as a second provider with CLI + web pickers
-  and a live connection test. All mypy debt cleared (gate blocking). Old
-  identities (tekstream, iris, bedrock, gemini) are banned and test-enforced.
-- The `/Users/cparnin/repos/tek/iris` checkout is a read-only reference and
-  must never be modified.
+- 2026-07-11: Migrated from a private work project to personal AppSec
+  Galaxy. Renamed package/CLI/MCP/action, OpenAI as default provider, then
+  added Anthropic as a second provider with CLI + web pickers and a live
+  connection test. All mypy debt cleared (gate blocking). The former
+  employer, product, and provider identities are banned; the exact strings
+  live rot13-encoded in the identity tests (TestMachineFacingIdentity and
+  the consumer residue tests), so they never appear in this tree.
+- The private upstream checkout is a read-only reference and must never be
+  modified (see rule 11).

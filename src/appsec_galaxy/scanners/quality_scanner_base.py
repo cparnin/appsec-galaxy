@@ -36,7 +36,7 @@ class QualityScannerBase(ABC):
 
     def __init__(self):
         self.logger = logger
-        self.iris_root = CHECKOUT_ROOT
+        self.checkout_root = CHECKOUT_ROOT
         self.configs_dir = CONFIGS_DIR
 
     @property
