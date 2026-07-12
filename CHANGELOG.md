@@ -5,6 +5,14 @@ semantic versioning.
 
 ## Unreleased
 
+### Fixed
+
+- Raised per-depth AI output-token caps (8K/16K/32K) and added explicit
+  truncation detection with an actionable warning. A vulnerable-enough repo
+  (verified live against a deliberately insecure Node app) produced a
+  findings array past the old 4K cap, which truncated the JSON and silently
+  discarded the whole batch while still billing for it.
+
 ## [2.3.0] - 2026-07-12
 
 ### Changed

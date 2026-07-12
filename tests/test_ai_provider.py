@@ -339,6 +339,48 @@ def test_anthropic_request_output_and_usage_are_recorded():
     }
 
 
+def test_openai_truncated_response_logs_actionable_warning(caplog):
+    # Regression: a findings array longer than max_output_tokens comes back
+    # as unterminated JSON and the whole batch is lost. The truncation must
+    # at least be named in the logs with the knobs that fix it.
+    response = SimpleNamespace(
+        output_text='[{"file": "app.js", "line": 1, "sev',
+        usage=SimpleNamespace(input_tokens=10, output_tokens=4096, input_tokens_details=None),
+        status='incomplete',
+        incomplete_details=SimpleNamespace(reason='max_output_tokens'),
+    )
+    wrapped, _ = _wrapped_openai_client(response)
+
+    with caplog.at_level('WARNING'):
+        ai_scanner._call_ai(wrapped, "model", "rules", "input", 64)
+
+    assert 'truncated' in caplog.text
+    assert 'DEPTH_MAX_TOKENS' in caplog.text
+
+
+def test_anthropic_truncated_response_logs_actionable_warning(caplog):
+    response = SimpleNamespace(
+        content=[SimpleNamespace(type="text", text='[{"file": "app.js"')],
+        usage=None,
+        stop_reason='max_tokens',
+    )
+    wrapped, _ = _wrapped_anthropic_client(response)
+
+    with caplog.at_level('WARNING'):
+        ai_scanner._call_ai(wrapped, "model", "rules", "input", 64)
+
+    assert 'truncated' in caplog.text
+    assert 'DEPTH_MAX_TOKENS' in caplog.text
+
+
+def test_depth_max_tokens_sized_for_vulnerable_repos():
+    # Regression guard for the nodejs-goof truncation: 4096 was too small
+    # for one batch of findings from a deliberately vulnerable app.
+    assert ai_scanner.DEPTH_MAX_TOKENS['quick'] >= 8192
+    assert ai_scanner.DEPTH_MAX_TOKENS['standard'] >= 16384
+    assert ai_scanner.DEPTH_MAX_TOKENS['deep'] >= 16384
+
+
 def test_anthropic_missing_usage_and_content_are_safe():
     response = SimpleNamespace(content=None, usage=None)
     wrapped, _ = _wrapped_anthropic_client(response)

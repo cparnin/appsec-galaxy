@@ -95,13 +95,16 @@ DEPTH_MODEL_MAP = {
     },
 }
 
-# Max output tokens per scan request, by depth. The quick tier still needs
-# enough space to return a complete JSON array during verification; truncation
-# is treated as a failed response so original findings are preserved.
+# Max output tokens per scan request, by depth. Sized for vulnerable repos:
+# a single batch of a deliberately insecure app can produce a findings array
+# well past 4K tokens, and a truncated array is unparseable JSON (the whole
+# batch is then lost while its tokens are still billed). Output tokens only
+# cost what the model actually generates, so generous caps are cheap
+# insurance. Truncation is still detected and logged in the call helpers.
 DEPTH_MAX_TOKENS = {
-    'quick': 4096,
-    'standard': 4096,
-    'deep': 8192,
+    'quick': 8192,
+    'standard': 16384,
+    'deep': 32768,
 }
 
 # List pricing per 1M text tokens as of 2026-07-11, per provider. Keep this
@@ -311,6 +314,13 @@ def _call_openai(client: Any, model_id: str, system_prompt: str, user_message: s
         f"OpenAI API: {input_tokens} in / {output_tokens} out / "
         f"{cache_read} cached-input tokens (model: {model_id})"
     )
+    if getattr(response, 'status', None) == 'incomplete':
+        reason = getattr(getattr(response, 'incomplete_details', None), 'reason', 'unknown')
+        logger.warning(
+            f"OpenAI response truncated ({reason}) at max_output_tokens={max_tokens}; "
+            f"the parsed result may be unusable. Consider raising DEPTH_MAX_TOKENS "
+            f"or lowering APPSEC_AI_SCAN_MAX_FILES."
+        )
     return response.output_text.strip()
 
 
@@ -332,6 +342,12 @@ def _call_anthropic(client: Any, model_id: str, system_prompt: str, user_message
         f"Anthropic API: {input_tokens} in / {output_tokens} out / "
         f"{cache_read} cached-input tokens (model: {model_id})"
     )
+    if getattr(response, 'stop_reason', None) == 'max_tokens':
+        logger.warning(
+            f"Anthropic response truncated at max_tokens={max_tokens}; "
+            f"the parsed result may be unusable. Consider raising DEPTH_MAX_TOKENS "
+            f"or lowering APPSEC_AI_SCAN_MAX_FILES."
+        )
     text = ''.join(
         getattr(block, 'text', '')
         for block in getattr(response, 'content', []) or []
