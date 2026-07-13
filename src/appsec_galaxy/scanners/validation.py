@@ -12,6 +12,35 @@ from appsec_galaxy.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
+def path_within_roots(path: str, roots: list[str]) -> bool:
+    """True if `path` is one of, or nested under, any allowed root.
+
+    Both sides are realpath-resolved first, so symlinks and `..` segments
+    cannot be used to escape a root. An empty root list denies everything
+    (fail closed). Used to confine scan targets to an allowlist on the MCP
+    and web surfaces, where the caller (an MCP client or a network request)
+    is not fully trusted.
+    """
+    try:
+        rp = os.path.realpath(path)
+    except OSError:
+        return False
+    for root in roots:
+        if not root:
+            continue
+        try:
+            rr = os.path.realpath(os.path.expanduser(root))
+        except OSError:
+            continue
+        try:
+            if os.path.commonpath([rp, rr]) == rr:
+                return True
+        except ValueError:
+            continue  # different drives (Windows) or mixed abs/rel
+    return False
+
+
 def validate_binary_path(env_var: str, default_bin: str, raise_on_error: bool = False) -> str | None:
     """
     Securely validate binary path from environment variable.

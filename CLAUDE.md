@@ -220,9 +220,11 @@ loudly on bad values. Key groups:
   dependency CVEs only)
 - Auto-fix: `APPSEC_AUTO_FIX`, `APPSEC_AUTO_FIX_MODE` (1 SAST, 2 deps,
   3 both, 4 skip), `GITHUB_TOKEN` (repo scope, PR creation only)
-- Web: `HOST` (default 0.0.0.0), `PORT`, `APPSEC_WEB_API_KEY`,
-  `APPSEC_WEB_CORS_ORIGINS`, `APPSEC_ENABLE_DIRECTORY_BROWSING`
-- MCP: `APPSEC_GALAXY_PATH`, `MCP_SCAN_TIMEOUT`, `MCP_REMEDIATE_TIMEOUT`
+- Web: `HOST` (default 127.0.0.1), `PORT`, `APPSEC_WEB_API_KEY`,
+  `APPSEC_WEB_CORS_ORIGINS`, `APPSEC_ENABLE_DIRECTORY_BROWSING`,
+  `APPSEC_ALLOWED_SCAN_ROOTS` (confine scan targets; recommended off-localhost)
+- MCP: `APPSEC_GALAXY_PATH`, `APPSEC_MCP_ALLOWED_ROOTS` (scan-target
+  allowlist), `MCP_SCAN_TIMEOUT`, `MCP_REMEDIATE_TIMEOUT`
 
 Every env var the code reads must appear in `env.example` or
 `mcp/mcp_env.example`; every documented var must be read by code. Audit with

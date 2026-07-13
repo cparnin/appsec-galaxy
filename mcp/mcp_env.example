@@ -18,3 +18,8 @@ APPSEC_AI_SCAN_MAX_FILES=75
 # Path to the AppSec Galaxy checkout the server should use. Only needed when
 # the server is launched from outside the repo (otherwise auto-detected).
 #APPSEC_GALAXY_PATH=/path/to/appsec-galaxy
+
+# Allowlist of directories a tool may scan (colon-separated). When set, it
+# replaces the broad defaults (~/repos, ~/projects, ~, .) so a client cannot
+# point the scanner at arbitrary local paths. Recommended.
+#APPSEC_MCP_ALLOWED_ROOTS=/path/to/repos:/path/to/more

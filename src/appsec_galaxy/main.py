@@ -225,6 +225,19 @@ def validate_repo_path(repo_path: str) -> Path:
             # Skip if system directory doesn't exist or can't be compared
             continue
 
+    # Optional allowlist: when APPSEC_ALLOWED_SCAN_ROOTS is set (recommended
+    # for any web deployment reachable beyond localhost), the target must live
+    # under one of those roots. This stops a network client from scanning
+    # arbitrary server-local paths and reading back source snippets.
+    allowed_roots = os.getenv('APPSEC_ALLOWED_SCAN_ROOTS', '').strip()
+    if allowed_roots:
+        from appsec_galaxy.scanners.validation import path_within_roots
+        roots = [r for r in allowed_roots.split(os.pathsep) if r.strip()]
+        if not path_within_roots(str(path), roots):
+            raise ValueError(
+                f"Repository path is outside APPSEC_ALLOWED_SCAN_ROOTS: {path}"
+            )
+
     # Warn about very large directories
     try:
         # Quick size check - count items in root directory

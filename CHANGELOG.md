@@ -7,6 +7,13 @@ semantic versioning.
 
 ### Security
 
+- Scan targets can be confined to an allowlist of directories, closing an
+  arbitrary-path / source-disclosure hole on the two surfaces where the
+  caller is not fully trusted. The MCP server now rejects `..` traversal and
+  confines every resolved repo to its search roots (override with
+  `APPSEC_MCP_ALLOWED_ROOTS`); the web `/scan` validator enforces
+  `APPSEC_ALLOWED_SCAN_ROOTS` when set. Containment uses realpath +
+  commonpath so symlinks and `..` cannot escape.
 - Auto-remediation no longer runs against untrusted PR code. On any
   `pull_request` event the checkout is the PR head (a fork can supply
   anything) and remediation commits, pushes, and opens a PR, so it is now

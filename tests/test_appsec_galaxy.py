@@ -1063,6 +1063,94 @@ class TestPackageRegistry:
         assert info.health_status == "unknown"
 
 
+class TestScanPathContainment:
+    """Confining scan targets to allowed roots (validation.path_within_roots
+    plus the MCP and web wiring). Blocks arbitrary local-directory scanning
+    and the source disclosure it enables."""
+
+    def test_within_root_true(self, tmp_path):
+        from appsec_galaxy.scanners.validation import path_within_roots
+        (tmp_path / 'repo').mkdir()
+        assert path_within_roots(str(tmp_path / 'repo'), [str(tmp_path)]) is True
+
+    def test_root_itself_allowed(self, tmp_path):
+        from appsec_galaxy.scanners.validation import path_within_roots
+        assert path_within_roots(str(tmp_path), [str(tmp_path)]) is True
+
+    def test_outside_root_false(self, tmp_path):
+        from appsec_galaxy.scanners.validation import path_within_roots
+        a = tmp_path / 'allowed'
+        a.mkdir()
+        b = tmp_path / 'secret'
+        b.mkdir()
+        assert path_within_roots(str(b), [str(a)]) is False
+
+    def test_sibling_prefix_not_confused(self, tmp_path):
+        """/allowed must not match /allowed-evil by string prefix."""
+        from appsec_galaxy.scanners.validation import path_within_roots
+        (tmp_path / 'allowed').mkdir()
+        evil = tmp_path / 'allowed-evil'
+        evil.mkdir()
+        assert path_within_roots(str(evil), [str(tmp_path / 'allowed')]) is False
+
+    def test_symlink_escape_blocked(self, tmp_path):
+        from appsec_galaxy.scanners.validation import path_within_roots
+        allowed = tmp_path / 'allowed'
+        allowed.mkdir()
+        outside = tmp_path / 'outside'
+        outside.mkdir()
+        link = allowed / 'escape'
+        try:
+            link.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unavailable")
+        # realpath resolves the symlink out of the allowed root
+        assert path_within_roots(str(link), [str(allowed)]) is False
+
+    def test_empty_roots_deny_all(self, tmp_path):
+        from appsec_galaxy.scanners.validation import path_within_roots
+        assert path_within_roots(str(tmp_path), []) is False
+
+    def test_web_validator_enforces_allowlist(self, tmp_path, monkeypatch):
+        from appsec_galaxy.main import validate_repo_path
+        allowed = tmp_path / 'allowed'
+        allowed.mkdir()
+        (allowed / '.git').mkdir()
+        outside = tmp_path / 'outside'
+        outside.mkdir()
+        (outside / '.git').mkdir()
+        monkeypatch.setenv('APPSEC_ALLOWED_SCAN_ROOTS', str(allowed))
+        # inside is accepted
+        assert validate_repo_path(str(allowed)).name == 'allowed'
+        # outside is rejected
+        with pytest.raises(ValueError, match='ALLOWED_SCAN_ROOTS'):
+            validate_repo_path(str(outside))
+
+    def test_mcp_rejects_parent_traversal(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'mcp'))
+        if 'appsec_galaxy_mcp_server' in sys.modules:
+            del sys.modules['appsec_galaxy_mcp_server']
+        import appsec_galaxy_mcp_server as m
+        with pytest.raises(ValueError, match="\\.\\."):
+            m._validate_repo_arg('../../etc')
+
+    def test_mcp_find_repo_confines_absolute_path(self, tmp_path, monkeypatch):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'mcp'))
+        if 'appsec_galaxy_mcp_server' in sys.modules:
+            del sys.modules['appsec_galaxy_mcp_server']
+        import appsec_galaxy_mcp_server as m
+        allowed = tmp_path / 'ok'
+        allowed.mkdir()
+        outside = tmp_path / 'nope'
+        outside.mkdir()
+        monkeypatch.setenv('APPSEC_MCP_ALLOWED_ROOTS', str(allowed))
+        monkeypatch.setenv('APPSEC_GALAXY_PATH', str(Path(__file__).resolve().parent.parent))
+        core = m.AppSecGalaxyMCPCore()
+        assert core.find_repo(str(allowed)) == str(allowed)
+        with pytest.raises(ValueError, match='allowed scan roots'):
+            core.find_repo(str(outside))
+
+
 class TestUntrustedPRContext:
     """Auto-remediation must not run against untrusted PR code in CI
     (src/main.py is_untrusted_pr_context + the CI gate in

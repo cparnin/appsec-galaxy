@@ -57,6 +57,10 @@ def _validate_repo_arg(repo_path: str) -> str:
         raise ValueError("repo_path too long")
     if any(c in repo_path for c in _DANGEROUS_CHARS):
         raise ValueError("repo_path contains disallowed characters")
+    # No parent-directory traversal: an MCP client (or a prompt-injected LLM
+    # driving one) must not walk out of the allowed scan roots.
+    if ".." in repo_path.replace("\\", "/").split("/"):
+        raise ValueError("repo_path must not contain '..' path segments")
     return repo_path
 
 
@@ -116,8 +120,17 @@ Please either:
 Example: export APPSEC_GALAXY_PATH="/path/to/appsec-galaxy" """)
 
     def _find_repo_search_paths(self):
-        """Get repository search paths from environment or defaults."""
+        """Get repository search paths from environment or defaults.
+
+        These double as the allowlist of roots a scan target may live under
+        (see _assert_allowed): the server only scans what it would discover.
+        Set APPSEC_MCP_ALLOWED_ROOTS (colon-separated) to lock this down
+        further than the defaults.
+        """
         base_paths = []
+        if os.environ.get("APPSEC_MCP_ALLOWED_ROOTS"):
+            base_paths.extend(os.environ["APPSEC_MCP_ALLOWED_ROOTS"].split(":"))
+            return base_paths  # explicit allowlist replaces the broad defaults
         if "REPO_SEARCH_PATHS" in os.environ:
             base_paths.extend(os.environ["REPO_SEARCH_PATHS"].split(":"))
         user_home = os.path.expanduser("~")
@@ -129,17 +142,30 @@ Example: export APPSEC_GALAXY_PATH="/path/to/appsec-galaxy" """)
         ])
         return base_paths
 
+    def _assert_allowed(self, resolved_path):
+        """Confine a resolved scan target to the allowed roots. Blocks a
+        client from pointing the scanner at arbitrary local directories
+        (source disclosure via the findings/snippet tools)."""
+        from appsec_galaxy.scanners.validation import path_within_roots
+        if not path_within_roots(resolved_path, self._find_repo_search_paths()):
+            raise ValueError(
+                "Repository is outside the allowed scan roots. Set "
+                "APPSEC_MCP_ALLOWED_ROOTS to permit this location."
+            )
+        return resolved_path
+
     def find_repo(self, repo_path):
         """Smart repo discovery with fuzzy matching. Input is validated at the
-        tool boundary (see _validate_repo_arg) before reaching here."""
+        tool boundary (see _validate_repo_arg) before reaching here; the
+        resolved target is then confined to the allowed roots."""
         if os.path.exists(repo_path):
-            return os.path.abspath(repo_path)
+            return self._assert_allowed(os.path.abspath(repo_path))
 
         search_paths = self._find_repo_search_paths()
         for base_path in search_paths:
             candidate = os.path.join(base_path, repo_path)
             if os.path.exists(candidate):
-                return os.path.abspath(candidate)
+                return self._assert_allowed(os.path.abspath(candidate))
 
         # Fuzzy matching (nodejsgoof -> nodejs-goof)
         for search_dir in search_paths:
@@ -149,7 +175,7 @@ Example: export APPSEC_GALAXY_PATH="/path/to/appsec-galaxy" """)
                         if repo_path.lower() in item.lower() or item.lower() in repo_path.lower():
                             full_path = os.path.join(search_dir, item)
                             if os.path.isdir(full_path):
-                                return os.path.abspath(full_path)
+                                return self._assert_allowed(os.path.abspath(full_path))
                 except PermissionError:
                     continue
 
