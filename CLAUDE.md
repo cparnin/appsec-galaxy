@@ -72,10 +72,13 @@ as the source of truth for how to work on AppSec Galaxy.
     workflows may pin `uses: cparnin/appsec-galaxy@vX.Y.Z`; never move or
     delete published tags.
 
-11. **Commit locally; the user pushes unless they say otherwise.**
-    Never force-push, never rewrite published history, never touch the
-    private upstream reference checkout (read-only; its path lives in
-    Claude's project memory, deliberately not in this repository).
+11. **Commit freely; push only after we agree in-session to push.**
+    Commit locally as work lands. Pushing to the remote requires an explicit
+    go-ahead from the user in the current session (a standing "you can push"
+    does not carry across sessions). Never force-push, never rewrite published
+    history, never touch the private upstream reference checkout (read-only;
+    its path lives in Claude's project memory, deliberately not in this
+    repository).
 
 ## Project Overview
 

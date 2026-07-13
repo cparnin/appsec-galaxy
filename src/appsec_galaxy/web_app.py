@@ -435,7 +435,10 @@ def scan_repository():
                 # Get auto_fix_mode from request data (sent from frontend form)
                 auto_fix_mode = data.get('auto_fix_mode', '3')  # Default to both if not specified
 
-                # Set environment variables for non-interactive mode
+                # Set environment variables for non-interactive mode.
+                # APPSEC_WEB_MODE is an internal process marker (set and
+                # deleted here), not a user-facing knob, so it is intentionally
+                # absent from env.example.
                 os.environ['APPSEC_WEB_MODE'] = 'true'
                 os.environ['APPSEC_AUTO_FIX_MODE'] = str(auto_fix_mode)
                 try:
