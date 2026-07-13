@@ -5,6 +5,17 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.4.1] - 2026-07-13
+
+### Changed
+
+- Auto-remediation is now suppressed only on FORK pull requests, not all
+  pull requests. v2.4.0 blocked every pull_request event; that also blocked
+  the maintainer's own same-repo PRs, which are trusted. Fork detection uses
+  `github.event.pull_request.head.repo.fork` (Action) and the event payload
+  (`is_untrusted_pr_context`), failing closed when the payload is unreadable.
+  Same-repo PRs and pushes create fix PRs normally again.
+
 ## [2.4.0] - 2026-07-13
 
 ### Security

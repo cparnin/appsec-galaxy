@@ -48,10 +48,10 @@ with:
   fail-on-critical: 'false'      # Don't break CI by default
 
 # Note: Code quality findings are ALWAYS shown regardless of scan-level
-# Note: Auto-fix is forced off on pull_request events. The PR checkout is
-#       untrusted code (a fork can supply anything), and remediation
-#       commits/pushes/opens PRs, so PRs are scan-and-comment only.
-#       Fix PRs are created on push to your default branch.
+# Note: Auto-fix is forced off on FORK pull requests only. A fork PR is
+#       outside code (it can supply anything) and remediation
+#       commits/pushes/opens PRs, so fork PRs are scan-and-comment only.
+#       Your own same-repo PRs and pushes create fix PRs normally.
 ```
 
 ## Supported Languages & Frameworks

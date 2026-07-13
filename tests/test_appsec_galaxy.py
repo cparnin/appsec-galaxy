@@ -34,7 +34,7 @@ def test_distribution_namespace_imports():
     import appsec_galaxy
 
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.4.0"
+    assert appsec_galaxy.__version__ == "2.4.1"
 
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
@@ -1152,9 +1152,9 @@ class TestScanPathContainment:
 
 
 class TestUntrustedPRContext:
-    """Auto-remediation must not run against untrusted PR code in CI
-    (src/main.py is_untrusted_pr_context + the CI gate in
-    handle_auto_remediation)."""
+    """Auto-remediation must not run against fork PR code in CI, but must
+    still run on same-repo PRs and pushes (src/main.py
+    is_untrusted_pr_context + the CI gate in handle_auto_remediation)."""
 
     def _fn(self):
         if 'appsec_galaxy.main' in sys.modules:
@@ -1162,8 +1162,24 @@ class TestUntrustedPRContext:
         from appsec_galaxy import main as m
         return m.is_untrusted_pr_context
 
-    def test_pull_request_event_is_untrusted(self, monkeypatch):
+    def _event(self, tmp_path, fork):
+        p = tmp_path / 'event.json'
+        p.write_text(json.dumps({'pull_request': {'head': {'repo': {'fork': fork}}}}))
+        return str(p)
+
+    def test_fork_pr_is_untrusted(self, tmp_path, monkeypatch):
         monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True))
+        assert self._fn()() is True
+
+    def test_same_repo_pr_is_trusted(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, False))
+        assert self._fn()() is False
+
+    def test_pr_without_payload_fails_closed(self, monkeypatch):
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.delenv('GITHUB_EVENT_PATH', raising=False)
         assert self._fn()() is True
 
     def test_push_event_is_trusted(self, monkeypatch):
@@ -1174,25 +1190,26 @@ class TestUntrustedPRContext:
         monkeypatch.delenv('GITHUB_EVENT_NAME', raising=False)
         assert self._fn()() is False
 
-    def test_gate_downgrades_autofix_to_scan_only(self, monkeypatch, capsys):
-        """In a PR context, handle_auto_remediation must not create PRs even
+    def test_gate_downgrades_autofix_on_fork_pr(self, tmp_path, monkeypatch, capsys):
+        """On a fork PR, handle_auto_remediation must not create PRs even
         with APPSEC_AUTO_FIX=true."""
         if 'appsec_galaxy.main' in sys.modules:
             del sys.modules['appsec_galaxy.main']
         from appsec_galaxy import main as m
         monkeypatch.setenv('GITHUB_ACTIONS', 'true')
         monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True))
         monkeypatch.setenv('APPSEC_AUTO_FIX', 'true')
         monkeypatch.setenv('APPSEC_AUTO_FIX_MODE', '3')
         findings = [{'tool': 'semgrep', 'check_id': 'sqli', 'severity': 'high',
                      'path': 'a.py', 'start': {'line': 1}, 'extra': {'message': 'x'}}]
         # create_remediation_pr is the only path that commits/pushes/opens a
-        # PR. Assert it is never reached in a pull_request context.
+        # PR. Assert it is never reached on a fork PR.
         with patch('appsec_galaxy.auto_remediation.remediation.create_remediation_pr') as mock_pr:
             result = m.handle_auto_remediation('/tmp/repo', findings)
-        assert not mock_pr.called, "remediation must not run on PR events"
+        assert not mock_pr.called, "remediation must not run on fork PRs"
         out = capsys.readouterr().out
-        assert 'scanning only' in out.lower() or 'disabled on pull_request' in out.lower()
+        assert 'scanning only' in out.lower() or 'fork pull request' in out.lower()
         assert result is not None
 
 

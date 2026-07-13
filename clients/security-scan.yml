@@ -33,7 +33,7 @@ jobs:
       - name: Run AppSec Galaxy
         id: scanner
         timeout-minutes: 8
-        uses: cparnin/appsec-galaxy@v2.4.0  # Pinned release; bump deliberately when upgrading
+        uses: cparnin/appsec-galaxy@v2.4.1  # Pinned release; bump deliberately when upgrading
         env:
           GH_TOKEN: ${{ github.token }}  # GitHub CLI expects GH_TOKEN in Actions
           #APPSEC_AUTO_FIX_DELAY: '2'  # Optional: Add 2-second delay between fixes to prevent API rate limiting
@@ -44,9 +44,9 @@ jobs:
           # ai-provider: 'anthropic'                              # Optional: use Claude models
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # Required when ai-provider is anthropic
           ai-model: ''
-          # Auto-fix runs on push to main/master only. On pull_request events
-          # the action forces it off (untrusted PR checkout), so PRs are
-          # scan-and-comment only. Leave this 'true' to get fix PRs on push.
+          # Auto-fix runs on push and your own same-repo PRs. The action
+          # forces it off only on fork PRs (outside code), so those are
+          # scan-and-comment only. Leave 'true' to get fix PRs.
           auto-fix: 'true'
           # auto-fix-mode: '3'  # Optional: 1=SAST+secrets, 2=dependencies, 3=both, 4=skip
           fail-on-critical: 'false'

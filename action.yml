@@ -147,13 +147,13 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         AI_MODEL: ${{ inputs.ai-model }}
-        # Force auto-fix off on pull_request events: the checkout is the PR
-        # head (untrusted for forks), and remediation commits/pushes/opens a
-        # PR. Honored on push and workflow_dispatch only. The scanner also
-        # enforces this internally (is_untrusted_pr_context); this is the
-        # outer layer so the untrusted branch is never even a candidate.
-        APPSEC_AUTO_FIX: ${{ github.event_name == 'pull_request' && 'false' || inputs.auto-fix }}
-        APPSEC_AUTO_FIX_MODE: ${{ github.event_name == 'pull_request' && '4' || inputs.auto-fix-mode }}
+        # Force auto-fix off on FORK pull requests: that checkout is code from
+        # someone outside the repo, and remediation commits/pushes/opens a PR.
+        # Same-repo PRs, push, and workflow_dispatch honor the input. The
+        # scanner also enforces this internally (is_untrusted_pr_context); this
+        # is the outer layer so the fork branch is never even a candidate.
+        APPSEC_AUTO_FIX: ${{ github.event.pull_request.head.repo.fork && 'false' || inputs.auto-fix }}
+        APPSEC_AUTO_FIX_MODE: ${{ github.event.pull_request.head.repo.fork && '4' || inputs.auto-fix-mode }}
         APPSEC_SCAN_LEVEL: ${{ inputs.scan-level }}
         APPSEC_CODE_QUALITY: ${{ inputs.code-quality }}
         APPSEC_DEPENDENCY_ANALYSIS: ${{ inputs.dependency-analysis }}
