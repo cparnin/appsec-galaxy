@@ -13,6 +13,8 @@ remediations.
 
 - Semgrep SAST, Gitleaks secret detection, and Trivy dependency plus IaC/config
   misconfiguration scanning (Terraform, CloudFormation, Kubernetes, Dockerfile).
+- Secret findings carry an offline confidence score (entropy + placeholder
+  heuristics) so test fixtures and template values sort below real credentials.
 - Language-specific code-quality adapters for common ecosystems.
 - Cross-file correlation, attack-chain analysis, trend history, diff scoping,
   and baseline suppression.

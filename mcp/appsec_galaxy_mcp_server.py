@@ -332,7 +332,7 @@ def _normalize_semgrep(data: dict, idx: int) -> dict:
 
 
 def _normalize_gitleaks(data: dict, idx: int) -> dict:
-    return {
+    finding = {
         "id": f"gitleaks-{idx}",
         "tool": "gitleaks",
         "category": "security",
@@ -347,6 +347,14 @@ def _normalize_gitleaks(data: dict, idx: int) -> dict:
         "fix_available": False,  # Secrets need manual review
         "remediation": "Remove secret and rotate credentials immediately"
     }
+    try:
+        from appsec_galaxy.scanners.gitleaks import classify_secret_confidence
+        confidence, reason = classify_secret_confidence(data.get('Secret', ''))
+        finding['confidence'] = confidence
+        finding['confidence_reason'] = reason
+    except Exception:
+        pass  # confidence is best-effort; never break the MCP surface
+    return finding
 
 
 def _normalize_trivy(vuln: dict, idx: int, target: str = "package.json") -> dict:

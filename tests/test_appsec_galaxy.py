@@ -358,6 +358,89 @@ class TestGitleaks:
         assert results == []
 
 
+class TestSecretConfidence:
+    """Offline secret confidence classification (scanners/gitleaks.py).
+
+    Pure functions: no network, and the reason string must never echo
+    the secret value."""
+
+    def test_entropy_bounds(self):
+        from appsec_galaxy.scanners.gitleaks import shannon_entropy
+        assert shannon_entropy('') == 0.0
+        assert shannon_entropy('aaaa') == 0.0
+        assert shannon_entropy('ab') == 1.0
+        assert shannon_entropy('gh0stP3pper!xQz47Lm') > 3.5
+
+    def test_placeholders_are_low(self):
+        from appsec_galaxy.scanners.gitleaks import classify_secret_confidence
+        for value in ('your-api-key-here', 'sk-EXAMPLE-key', 'CHANGEME',
+                      '<YOUR_TOKEN>', '${API_KEY}', '{{ secret }}',
+                      'test_password_123', 'xxxxxxxxxxxx', 'REDACTED'):
+            confidence, reason = classify_secret_confidence(value)
+            assert confidence == 'low', f'{value!r} should be low, got {confidence}'
+
+    def test_degenerate_values_are_low(self):
+        from appsec_galaxy.scanners.gitleaks import classify_secret_confidence
+        assert classify_secret_confidence('')[0] == 'low'
+        assert classify_secret_confidence('zzzzzzzzzzzzzzzz')[0] == 'low'  # one repeated char
+        assert classify_secret_confidence('hunter2')[0] == 'low'           # too short
+
+    def test_real_looking_secret_is_high(self):
+        from appsec_galaxy.scanners.gitleaks import classify_secret_confidence
+        confidence, reason = classify_secret_confidence('ghp_x9K2mQ8vL4nR7tY1wE3uI6oP0aS5dF8g')
+        assert confidence == 'high'
+        assert 'entropy' in reason
+
+    def test_reason_never_contains_secret(self):
+        from appsec_galaxy.scanners.gitleaks import classify_secret_confidence
+        secret = 'ghp_x9K2mQ8vL4nR7tY1wE3uI6oP0aS5dF8g'
+        for value in (secret, 'your-key-here', 'aaaaaaaaaa'):
+            _, reason = classify_secret_confidence(value)
+            assert value not in reason
+
+    @patch('appsec_galaxy.scanners.gitleaks.subprocess.run')
+    @patch('appsec_galaxy.scanners.gitleaks.validate_binary_path')
+    @patch('appsec_galaxy.scanners.gitleaks.validate_repo_path')
+    def test_run_gitleaks_attaches_confidence(
+        self, mock_validate_repo, mock_validate_binary, mock_subprocess,
+        mock_repo, output_dir, sample_gitleaks_output
+    ):
+        mock_validate_binary.return_value = 'gitleaks'
+        mock_validate_repo.return_value = mock_repo
+        output_file = output_dir / "gitleaks.json"
+
+        def mock_run(*args, **kwargs):
+            output_file.write_text(json.dumps(sample_gitleaks_output))
+            result = Mock()
+            result.returncode = 1
+            result.stdout = result.stderr = ""
+            return result
+
+        mock_subprocess.side_effect = mock_run
+        results = run_gitleaks(str(mock_repo), output_dir)
+        assert results and 'confidence' in results[0]
+        # fixture secret is sk-1234567890abcdef: sequential digits -> low
+        assert results[0]['confidence'] == 'low'
+        assert results[0]['Secret'] not in results[0]['confidence_reason']
+
+    def test_html_sorts_low_confidence_last(self, tmp_path):
+        from appsec_galaxy.reporting.html import generate_html_report
+        findings = [
+            {'tool': 'gitleaks', 'RuleID': 'k1', 'File': 'a.py', 'StartLine': 1,
+             'Description': 'placeholder secret', 'category': 'security',
+             'confidence': 'low', 'confidence_reason': 'placeholder or test-fixture pattern'},
+            {'tool': 'gitleaks', 'RuleID': 'k2', 'File': 'b.py', 'StartLine': 2,
+             'Description': 'real looking secret', 'category': 'security',
+             'confidence': 'high', 'confidence_reason': 'high entropy (4.1 bits/char)'},
+        ]
+        out = tmp_path / 'out'
+        out.mkdir()
+        generate_html_report(findings, '', str(out), '/repo', {'python'})
+        html_out = (out / 'report.html').read_text()
+        assert 'Confidence:' in html_out
+        assert html_out.index('real looking secret') < html_out.index('placeholder secret')
+
+
 # ============================================================================
 # SEMGREP SCANNER TESTS
 # ============================================================================
@@ -2424,6 +2507,13 @@ class TestMCPServerTools:
             del sys.modules['appsec_galaxy_mcp_server']
         import appsec_galaxy_mcp_server
         return appsec_galaxy_mcp_server
+
+    def test_gitleaks_normalizer_includes_confidence(self, mcp_module):
+        f = mcp_module._normalize_gitleaks({'Description': 'key', 'RuleID': 'r',
+                                            'File': 'a.py', 'StartLine': 1,
+                                            'Secret': 'your-key-here'}, 0)
+        assert f['confidence'] == 'low'
+        assert 'your-key-here' not in f['confidence_reason']
 
     def test_iter_trivy_findings_includes_misconfigs(self, mcp_module, sample_trivy_misconfig_output):
         """MCP must surface Misconfigurations, not just Vulnerabilities."""

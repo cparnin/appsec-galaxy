@@ -1,5 +1,8 @@
 import subprocess
 import json
+import math
+import re
+from collections import Counter
 from pathlib import Path
 import logging
 
@@ -10,6 +13,65 @@ from appsec_galaxy.project_paths import CONFIGS_DIR
 from .validation import validate_binary_path, validate_repo_path
 
 logger = logging.getLogger(__name__)
+
+# Placeholder / test-fixture shapes. Matching is against the lowercased
+# captured value only; the value itself is never logged or stored beyond
+# what gitleaks already wrote to its own raw output.
+_PLACEHOLDER_PATTERNS = [
+    r'your[-_ ]',
+    r'example',
+    r'placeholder',
+    r'change[-_ ]?me',
+    r'dummy',
+    r'sample',
+    r'\bfake',
+    r'test[-_ ]?(key|token|secret|password|value)',
+    r'xxxx',
+    r'1234567890',
+    r'abcdefgh',
+    r'<[^>]+>',            # <YOUR_KEY_HERE>
+    r'\$\{[^}]+\}',        # ${SECRET} template refs
+    r'%\([^)]+\)s',        # %(secret)s template refs
+    r'\{\{[^}]+\}\}',      # {{ secret }} template refs
+    r'insert[-_ ]',
+    r'replace[-_ ]',
+    r'todo',
+    r'redacted',
+    r'not[-_ ]?a[-_ ]?real',
+]
+_PLACEHOLDER_RE = re.compile('|'.join(_PLACEHOLDER_PATTERNS))
+
+
+def shannon_entropy(value: str) -> float:
+    """Shannon entropy in bits per character. Pure, offline."""
+    if not value:
+        return 0.0
+    n = len(value)
+    return -sum((c / n) * math.log2(c / n) for c in Counter(value).values())
+
+
+def classify_secret_confidence(secret: str) -> tuple[str, str]:
+    """Classify a captured secret as real-looking or likely noise.
+
+    Returns (confidence, reason) where confidence is high | medium | low.
+    Pure and offline: no network, and the reason string never contains
+    the secret value.
+    """
+    s = (secret or '').strip()
+    if not s:
+        return 'low', 'empty capture'
+    if _PLACEHOLDER_RE.search(s.lower()):
+        return 'low', 'placeholder or test-fixture pattern'
+    if len(set(s)) == 1:
+        return 'low', 'single repeated character'
+    if len(s) < 8:
+        return 'low', 'too short for a real credential'
+    entropy = shannon_entropy(s)
+    if entropy < 3.0:
+        return 'low', f'low entropy ({entropy:.1f} bits/char)'
+    if entropy >= 3.5 and len(s) >= 16:
+        return 'high', f'high entropy ({entropy:.1f} bits/char)'
+    return 'medium', f'moderate entropy ({entropy:.1f} bits/char)'
 
 def run_gitleaks(repo_path: str, output_dir: Path | None = None) -> list:
     """
@@ -100,9 +162,23 @@ def run_gitleaks(repo_path: str, output_dir: Path | None = None) -> list:
                 results = json.loads(content)
                 if isinstance(results, list):
                     # Normalize through the canonical Finding boundary
-                    # (adds category + tool; raw gitleaks keys preserved)
-                    normalized = [Finding.from_gitleaks(f).to_dict() for f in results]
+                    # (adds category + tool; raw gitleaks keys preserved),
+                    # then attach an offline confidence classification so
+                    # placeholder/test-fixture "secrets" can be de-noised.
+                    normalized = []
+                    low_confidence = 0
+                    for raw in results:
+                        d = Finding.from_gitleaks(raw).to_dict()
+                        confidence, reason = classify_secret_confidence(raw.get('Secret', ''))
+                        d['confidence'] = confidence
+                        d['confidence_reason'] = reason
+                        if confidence == 'low':
+                            low_confidence += 1
+                        normalized.append(d)
                     logger.debug(f"Gitleaks found {len(normalized)} potential secrets")
+                    if low_confidence:
+                        logger.info(f"{low_confidence} secret finding(s) classified low confidence "
+                                    "(placeholder/low-entropy); sorted last in the report")
                     return normalized
                 else:
                     logger.warning(f"Unexpected Gitleaks output format: {type(results)}")

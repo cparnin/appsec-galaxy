@@ -26,6 +26,12 @@ semantic versioning.
   never imported demotes one level (KEV never below high). The HTML report
   sorts by risk_priority first and shows the reachability evidence; SARIF
   carries reachability and risk_priority properties.
+- Secret confidence classification: every gitleaks finding gets an offline
+  confidence (high/medium/low) from Shannon entropy plus placeholder and
+  test-fixture heuristics (your-...-here, template refs, repeated chars).
+  The HTML report sorts real-looking secrets first, MCP findings carry the
+  field, and the reason string never contains the secret value. No network;
+  live credential validation remains a possible future opt-in.
 - SARIF export is now first-class for GitHub Code Scanning: each rule carries
   `security-severity` (drives Security-tab ranking), each result carries
   `partialFingerprints` (dedups alerts across runs and tracks fix/reopen),

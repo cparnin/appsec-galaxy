@@ -33,7 +33,7 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
   `APPSEC_TRIVY_SCANNERS`),
   code-quality linters (7 langs), AI scanner, AST cross-file attack chains,
   AI cross-file. EPSS + CISA KEV enrichment (`vuln_intel.py`). SBOM
-  (CycloneDX + SPDX). 443 tests.
+  (CycloneDX + SPDX). 451 tests.
 
 ## Tier 1 - easy buttons (one-flag / ~20-line wins)
 
@@ -107,7 +107,7 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
 - **Why this is the flagship:** exploit-probability AND reachability ranking is
   what separates elite tools from noisy ones. Best noise-reduction ROI here.
 
-### 2b. Secret confidence / validation
+### 2b. Secret confidence / validation [offline layer DONE 2026-07-13; live validation deferred]
 - **Where:** `scanners/gitleaks.py` normalization path.
 - **Add a confidence layer** (no network by default):
   - Shannon entropy of the captured secret.

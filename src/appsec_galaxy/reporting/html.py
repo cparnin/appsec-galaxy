@@ -85,7 +85,10 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
             '': 6          # Unknown severity goes last
         }
         risk = finding.get('risk_priority') or finding.get('exploit_priority')
-        return (_RISK_RANK.get(risk, 2), severity_order.get(severity, 6))
+        # Secret confidence (gitleaks only): real-looking secrets before
+        # placeholder/low-entropy captures
+        conf_rank = {'high': 0, 'medium': 1, 'low': 2}.get(finding.get('confidence'), 1)
+        return (_RISK_RANK.get(risk, 2), severity_order.get(severity, 6), conf_rank)
 
     try:
         # Convert output_dir to Path object if it's a string

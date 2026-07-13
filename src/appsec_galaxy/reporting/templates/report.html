@@ -848,6 +848,12 @@
                   </div>
                 </div>
               {% endif %}
+              {% if f.get('confidence') %}
+                <div style="margin-top: 0.3rem; font-size: 0.8rem; color: #718096;">
+                  Confidence: <strong>{{ f.get('confidence') }}</strong>
+                  {%- if f.get('confidence_reason') %} ({{ f.get('confidence_reason') }}){% endif %}
+                </div>
+              {% endif %}
               {% if f.get('reachability') %}
                 <div style="margin-top: 0.3rem; font-size: 0.8rem; color: #718096;">
                   {% if f.get('in_kev') %}<strong style="color: #f87171;">Actively exploited (KEV)</strong> | {% endif %}
