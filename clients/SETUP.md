@@ -43,11 +43,15 @@ with:
   openai-api-key: ${{ secrets.OPENAI_API_KEY }}
   ai-model: ''                   # Optional model override
   scan-level: 'critical-high'    # Or 'all' (affects security findings only)
-  auto-fix: 'true'               # Generate fix PRs
+  auto-fix: 'true'               # Generate fix PRs (push events only)
   auto-fix-mode: '3'             # 1=SAST, 2=deps, 3=both, 4=none
   fail-on-critical: 'false'      # Don't break CI by default
 
 # Note: Code quality findings are ALWAYS shown regardless of scan-level
+# Note: Auto-fix is forced off on pull_request events. The PR checkout is
+#       untrusted code (a fork can supply anything), and remediation
+#       commits/pushes/opens PRs, so PRs are scan-and-comment only.
+#       Fix PRs are created on push to your default branch.
 ```
 
 ## Supported Languages & Frameworks

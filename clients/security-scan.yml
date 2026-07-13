@@ -44,6 +44,9 @@ jobs:
           # ai-provider: 'anthropic'                              # Optional: use Claude models
           # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # Required when ai-provider is anthropic
           ai-model: ''
+          # Auto-fix runs on push to main/master only. On pull_request events
+          # the action forces it off (untrusted PR checkout), so PRs are
+          # scan-and-comment only. Leave this 'true' to get fix PRs on push.
           auto-fix: 'true'
           # auto-fix-mode: '3'  # Optional: 1=SAST+secrets, 2=dependencies, 3=both, 4=skip
           fail-on-critical: 'false'

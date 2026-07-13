@@ -1063,6 +1063,51 @@ class TestPackageRegistry:
         assert info.health_status == "unknown"
 
 
+class TestUntrustedPRContext:
+    """Auto-remediation must not run against untrusted PR code in CI
+    (src/main.py is_untrusted_pr_context + the CI gate in
+    handle_auto_remediation)."""
+
+    def _fn(self):
+        if 'appsec_galaxy.main' in sys.modules:
+            del sys.modules['appsec_galaxy.main']
+        from appsec_galaxy import main as m
+        return m.is_untrusted_pr_context
+
+    def test_pull_request_event_is_untrusted(self, monkeypatch):
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        assert self._fn()() is True
+
+    def test_push_event_is_trusted(self, monkeypatch):
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'push')
+        assert self._fn()() is False
+
+    def test_no_ci_context_is_trusted(self, monkeypatch):
+        monkeypatch.delenv('GITHUB_EVENT_NAME', raising=False)
+        assert self._fn()() is False
+
+    def test_gate_downgrades_autofix_to_scan_only(self, monkeypatch, capsys):
+        """In a PR context, handle_auto_remediation must not create PRs even
+        with APPSEC_AUTO_FIX=true."""
+        if 'appsec_galaxy.main' in sys.modules:
+            del sys.modules['appsec_galaxy.main']
+        from appsec_galaxy import main as m
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.setenv('APPSEC_AUTO_FIX', 'true')
+        monkeypatch.setenv('APPSEC_AUTO_FIX_MODE', '3')
+        findings = [{'tool': 'semgrep', 'check_id': 'sqli', 'severity': 'high',
+                     'path': 'a.py', 'start': {'line': 1}, 'extra': {'message': 'x'}}]
+        # create_remediation_pr is the only path that commits/pushes/opens a
+        # PR. Assert it is never reached in a pull_request context.
+        with patch('appsec_galaxy.auto_remediation.remediation.create_remediation_pr') as mock_pr:
+            result = m.handle_auto_remediation('/tmp/repo', findings)
+        assert not mock_pr.called, "remediation must not run on PR events"
+        out = capsys.readouterr().out
+        assert 'scanning only' in out.lower() or 'disabled on pull_request' in out.lower()
+        assert result is not None
+
+
 class TestRemediationSandboxing:
     """Auto-remediation must never execute untrusted repo code when
     regenerating lockfiles (src/auto_remediation/remediation.py).

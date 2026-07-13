@@ -240,7 +240,9 @@ a name-only grep when touching configuration.
   reverted (never committed). Additive findings (e.g. Docker missing-USER)
   are not auto-fixable because replace-mode cannot insert a line. Lockfile
   regeneration never runs untrusted repo code: npm/yarn use `--ignore-scripts`,
-  `go get` uses `GOTOOLCHAIN=local`.
+  `go get` uses `GOTOOLCHAIN=local`. Auto-remediation is forced off on CI
+  `pull_request` events (`is_untrusted_pr_context()` + the Action env gate):
+  the PR checkout is untrusted and remediation commits/pushes/opens PRs.
 - Fake-secret fixtures need suppression in BOTH `.gitleaksignore`
   (fingerprints, for raw gitleaks) and `.appsec-galaxy-ignore` (app baseline).
 - Never log secret values anywhere, including examples and test fixtures.

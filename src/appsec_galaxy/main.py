@@ -320,6 +320,18 @@ def is_github_actions() -> bool:
     """Check if running in GitHub Actions environment."""
     return os.getenv('GITHUB_ACTIONS') == 'true'
 
+
+def is_untrusted_pr_context() -> bool:
+    """True when running against untrusted PR code in a CI pull_request event.
+
+    Auto-remediation must never run here: it commits, pushes, and opens a
+    PR from code an outside contributor controls. Any pull_request event
+    checks out the PR head (not the reviewed base), so every one is treated
+    as untrusted, fork or not. Outside a pull_request event this is False
+    (push/dispatch and interactive CLI use are trusted by the operator).
+    """
+    return os.getenv('GITHUB_EVENT_NAME') == 'pull_request'
+
 def _classify_dir(dir_path: str) -> str:
     """Classify a directory: git, nodejs, python, or plain directory."""
     p = Path(dir_path)
@@ -1246,6 +1258,15 @@ def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], 
             # In CI environments, determine auto-fix behavior from environment variables
             auto_fix_enabled = os.getenv('APPSEC_AUTO_FIX', 'false').lower() == 'true'
             auto_fix_mode = os.getenv('APPSEC_AUTO_FIX_MODE', '')  # Optional specific mode override
+
+            # Never auto-remediate untrusted PR code: it would commit, push,
+            # and open a PR from an outside contributor's checkout. Downgrade
+            # to scan-only (mode 4) regardless of the configured input.
+            if is_untrusted_pr_context() and (auto_fix_enabled or auto_fix_mode in ['1', '2', '3']):
+                print("   → Auto-fix disabled on pull_request events (untrusted checkout); scanning only.")
+                logger.info("Auto-remediation suppressed: untrusted pull_request context")
+                auto_fix_enabled = False
+                auto_fix_mode = '4'
 
             if auto_fix_mode in ['1', '2', '3', '4']:
                 # Validate the mode makes sense given available findings

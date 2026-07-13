@@ -7,6 +7,13 @@ semantic versioning.
 
 ### Security
 
+- Auto-remediation no longer runs against untrusted PR code. On any
+  `pull_request` event the checkout is the PR head (a fork can supply
+  anything) and remediation commits, pushes, and opens a PR, so it is now
+  forced off at two layers: the Action sets `APPSEC_AUTO_FIX` off on
+  pull_request events, and the scanner itself downgrades to scan-only via a
+  new `is_untrusted_pr_context()` check. Fix PRs are created on push and
+  workflow_dispatch only.
 - Auto-remediation no longer executes untrusted repo code when regenerating
   lockfiles. `npm install` and `yarn install` now run with `--ignore-scripts`
   (blocking preinstall/postinstall/prepare lifecycle scripts from the scanned
