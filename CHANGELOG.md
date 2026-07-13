@@ -5,6 +5,15 @@ semantic versioning.
 
 ## Unreleased
 
+### Security
+
+- Auto-remediation no longer executes untrusted repo code when regenerating
+  lockfiles. `npm install` and `yarn install` now run with `--ignore-scripts`
+  (blocking preinstall/postinstall/prepare lifecycle scripts from the scanned
+  repo, which were an arbitrary-code-execution vector on the scan host and CI
+  runners), and `go get` runs with `GOTOOLCHAIN=local` (refusing to download
+  and run a Go toolchain named in a hostile go.mod).
+
 ### Added
 
 - Trivy now scans IaC and config misconfigurations (Terraform, CloudFormation,

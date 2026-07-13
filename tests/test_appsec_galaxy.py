@@ -1063,6 +1063,56 @@ class TestPackageRegistry:
         assert info.health_status == "unknown"
 
 
+class TestRemediationSandboxing:
+    """Auto-remediation must never execute untrusted repo code when
+    regenerating lockfiles (src/auto_remediation/remediation.py).
+
+    The scanned repo is hostile input: npm/yarn preinstall/postinstall
+    lifecycle scripts and Go toolchain switching are code-execution
+    vectors on the scan host / CI runner."""
+
+    def _remediator(self):
+        """Build an AutoRemediator without triggering __init__ (which
+        constructs an AI client and needs a key)."""
+        from appsec_galaxy.auto_remediation.remediation import AutoRemediator
+        r = AutoRemediator.__new__(AutoRemediator)
+        r._logged_unsupported_types = set()
+        return r
+
+    def _write_pkg(self, tmp_path, lockfile):
+        (tmp_path / 'package.json').write_text(json.dumps({
+            'name': 'victim', 'dependencies': {'lodash': '^4.17.19'}
+        }))
+        (tmp_path / lockfile).write_text('{}')
+        return str(tmp_path / 'package.json')
+
+    def test_npm_lockfile_regen_ignores_scripts(self, tmp_path):
+        pkg = self._write_pkg(tmp_path, 'package-lock.json')
+        with patch('appsec_galaxy.auto_remediation.remediation.subprocess.run') as mock_run:
+            mock_run.return_value = Mock(returncode=0, stderr='', stdout='')
+            self._remediator()._update_nodejs_package_json(pkg, 'lodash', '4.17.21', str(tmp_path))
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == 'npm'
+        assert '--ignore-scripts' in cmd
+
+    def test_yarn_lockfile_regen_ignores_scripts(self, tmp_path):
+        pkg = self._write_pkg(tmp_path, 'yarn.lock')
+        with patch('appsec_galaxy.auto_remediation.remediation.subprocess.run') as mock_run:
+            mock_run.return_value = Mock(returncode=0, stderr='', stdout='')
+            self._remediator()._update_nodejs_package_json(pkg, 'lodash', '4.17.21', str(tmp_path))
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == 'yarn'
+        assert '--ignore-scripts' in cmd
+
+    def test_go_get_pins_toolchain_to_local(self, tmp_path):
+        (tmp_path / 'go.mod').write_text('module victim\n\ngo 1.21\n')
+        with patch('appsec_galaxy.auto_remediation.remediation.subprocess.run') as mock_run:
+            mock_run.return_value = Mock(returncode=0, stderr='', stdout='')
+            self._remediator()._update_go_mod('go.mod', 'github.com/x/y', '1.2.3', str(tmp_path))
+        env = mock_run.call_args.kwargs.get('env') or {}
+        assert env.get('GOTOOLCHAIN') == 'local'
+
+
 class TestDependencyAnalyzerIntegration:
     """Integration tests for the full dependency analyzer."""
 

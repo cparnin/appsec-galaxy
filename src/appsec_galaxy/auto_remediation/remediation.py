@@ -1494,8 +1494,11 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
                 try:
                     if os.path.exists(package_lock_path):
                         logger.debug("Regenerating package-lock.json...")
+                        # --ignore-scripts: the scanned repo is untrusted, so
+                        # never run its preinstall/postinstall/prepare lifecycle
+                        # scripts (arbitrary code execution on the scan host).
                         result = subprocess.run(
-                            ["npm", "install", "--package-lock-only"],
+                            ["npm", "install", "--package-lock-only", "--ignore-scripts"],
                             cwd=package_dir,
                             capture_output=True,
                             text=True,
@@ -1508,8 +1511,10 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
 
                     elif os.path.exists(yarn_lock_path):
                         logger.info("Regenerating yarn.lock...")
+                        # --ignore-scripts: untrusted repo, never run its
+                        # lifecycle scripts (see npm branch above).
                         result = subprocess.run(
-                            ["yarn", "install", "--no-progress"],
+                            ["yarn", "install", "--no-progress", "--ignore-scripts"],
                             cwd=package_dir,
                             capture_output=True,
                             text=True,
@@ -1938,8 +1943,14 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
             # Log the command for debugging (safe since inputs are validated)
             logger.debug(f"Running Go command: {' '.join(shlex.quote(arg) for arg in cmd)}")
 
+            # GOTOOLCHAIN=local: the scanned repo is untrusted; refuse to
+            # download and execute a different Go toolchain named in its
+            # go.mod (Go 1.21+ toolchain switching is a code-execution vector).
+            go_env = os.environ.copy()
+            go_env['GOTOOLCHAIN'] = 'local'
             result = subprocess.run(
-                cmd, cwd=go_mod_dir, capture_output=True, text=True, timeout=60, shell=False
+                cmd, cwd=go_mod_dir, capture_output=True, text=True, timeout=60,
+                shell=False, env=go_env
             )
 
             if result.returncode == 0:
