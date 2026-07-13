@@ -5,6 +5,16 @@ semantic versioning.
 
 ## Unreleased
 
+### Fixed
+
+- Auto-remediation no longer commits broken code. Every applied single-line
+  fix now passes through a language-aware syntax gate (Python, JS, JSON, YAML,
+  shell, Go, Ruby, PHP where the tool is present); a fix whose result fails to
+  parse is reverted and flagged for manual review instead of being committed.
+  Removed the Docker "missing-USER" finding types from auto-fix: they need
+  line insertion, which single-line replacement cannot express (it was
+  deleting the ENTRYPOINT).
+
 ### Changed
 
 - HTML report is now dark-themed by default (was light) and front-loads the

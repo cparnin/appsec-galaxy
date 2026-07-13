@@ -230,7 +230,10 @@ a name-only grep when touching configuration.
 - Baseline and diff filters fail open; AI verification failures preserve
   original findings; cross-file/report AI failures degrade to static output.
 - Remediation: one-line replacements only, indentation preserved, protected
-  files and secrets excluded, multi-line model output rejected.
+  files and secrets excluded, multi-line model output rejected. Every applied
+  fix passes `validate_file_syntax()`; a result that no longer parses is
+  reverted (never committed). Additive findings (e.g. Docker missing-USER)
+  are not auto-fixable because replace-mode cannot insert a line.
 - Fake-secret fixtures need suppression in BOTH `.gitleaksignore`
   (fingerprints, for raw gitleaks) and `.appsec-galaxy-ignore` (app baseline).
 - Never log secret values anywhere, including examples and test fixtures.

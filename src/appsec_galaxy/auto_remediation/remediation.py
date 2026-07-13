@@ -319,6 +319,94 @@ def _secure_read_file(file_path: str, max_size: int = 10 * 1024 * 1024) -> str |
         logger.error(f"Error reading file {file_path}: {e}")
         return None
 
+
+# Parse-only syntax validators, keyed by file extension. Every command is a
+# lint/parse mode that does NOT execute the file, so it is safe to run against
+# hostile repo contents (the scanner assumes scanned code is untrusted).
+# Missing tools are handled as "unknown" (cannot validate) rather than failing.
+_SYNTAX_CHECK_CMD = {
+    '.js': ['node', '--check'],
+    '.jsx': ['node', '--check'],
+    '.mjs': ['node', '--check'],
+    '.cjs': ['node', '--check'],
+    '.json': None,   # validated in-process via json.loads
+    '.py': None,     # validated in-process via ast.parse
+    '.yaml': None,   # validated in-process via yaml.safe_load (if available)
+    '.yml': None,
+    '.sh': ['bash', '-n'],
+    '.bash': ['bash', '-n'],
+    '.rb': ['ruby', '-c'],
+    '.php': ['php', '-l'],
+    '.go': ['gofmt', '-e'],
+}
+
+
+def validate_file_syntax(abs_path: str) -> str:
+    """Return 'ok', 'broken', or 'unknown' for a file's syntactic validity.
+
+    This is the safety gate that stops auto-remediation from committing a fix
+    that breaks the file (e.g. a single-line replacement that truncates a
+    multi-line statement). 'unknown' means no validator is available for that
+    file type or the required tool is not installed; callers treat 'unknown'
+    as non-blocking but should surface that the fix was not syntax-checked.
+    """
+    import ast as _ast
+    import shutil as _shutil
+
+    ext = os.path.splitext(abs_path)[1].lower()
+    if ext not in _SYNTAX_CHECK_CMD:
+        return 'unknown'
+
+    # In-process validators (no subprocess, always available).
+    if ext == '.py':
+        try:
+            with open(abs_path, encoding='utf-8') as fh:
+                _ast.parse(fh.read())
+            return 'ok'
+        except SyntaxError:
+            return 'broken'
+        except Exception:
+            return 'unknown'
+    if ext == '.json':
+        try:
+            with open(abs_path, encoding='utf-8') as fh:
+                json.load(fh)
+            return 'ok'
+        except json.JSONDecodeError:
+            return 'broken'
+        except Exception:
+            return 'unknown'
+    if ext in ('.yaml', '.yml'):
+        try:
+            import yaml as _yaml
+        except ImportError:
+            return 'unknown'
+        try:
+            with open(abs_path, encoding='utf-8') as fh:
+                _yaml.safe_load(fh)
+            return 'ok'
+        except _yaml.YAMLError:
+            return 'broken'
+        except Exception:
+            return 'unknown'
+
+    # Subprocess validators (parse-only; require the tool on PATH).
+    cmd = _SYNTAX_CHECK_CMD[ext]
+    if not cmd or not _shutil.which(cmd[0]):
+        return 'unknown'
+    try:
+        result = subprocess.run(
+            [*cmd, abs_path],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return 'unknown'
+    return 'ok' if result.returncode == 0 else 'broken'
+
+
 SUMMARY_INSTRUCTIONS = """You are a senior application security advisor.
 Write a concise executive summary focused on business impact, urgency, and
 specific next actions. Be direct and avoid unnecessary technical jargon."""
@@ -439,9 +527,11 @@ Focus on business impact and urgency. Be direct and actionable. Don't use techni
             'express-mongo-nosqli', 'mongo-nosqli', 'express-child-process',
             'express-cookie-session', 'express-check-csurf', 'csurf-middleware', 'csrf',
 
-            # Docker security fixes (now that Dockerfiles are unprotected)
-            'missing-user', 'dockerfile-user', 'missing-user-entrypoint',
-            'dockerfile.security', 'docker-security'
+            # NOTE: Docker "missing-user"/"missing-user-entrypoint" findings were
+            # intentionally removed. They are ADDITIVE (the fix must INSERT a
+            # `USER` line), but auto-fix only does single-line REPLACEMENT, which
+            # deletes the flagged line (e.g. the ENTRYPOINT) instead. These are
+            # flagged for manual review until an insert-mode fixer exists.
         ]
 
         # Check if any pattern matches the check_id or message
@@ -601,21 +691,43 @@ Provide the corrected code for line {line_number}.
 
             # Read the file
             with open(full_path, encoding='utf-8') as f:
-                lines = f.readlines()
+                original_lines = f.readlines()
 
-            # Apply the fix
-            if line_number <= len(lines):
-                lines[line_number - 1] = fixed_line + '\n'
-
-                # Write back to file
-                with open(full_path, 'w', encoding='utf-8') as f:
-                    f.writelines(lines)
-
-                logger.info(f"✅ Successfully applied fix to {file_path}:{line_number}")
-                return True
-            else:
+            if line_number > len(original_lines):
                 logger.error(f"Line number {line_number} out of range for {file_path}")
                 return False
+
+            # Apply the fix to a copy so we can roll back on a bad result.
+            lines = list(original_lines)
+            lines[line_number - 1] = fixed_line + '\n'
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+
+            # SAFETY GATE: never leave a fix in place that breaks the file.
+            # A single-line replacement can truncate a multi-line statement or
+            # otherwise produce invalid code; if the language has a validator
+            # and the result no longer parses, revert and refuse the fix.
+            verdict = validate_file_syntax(full_path)
+            if verdict == 'broken':
+                with open(full_path, 'w', encoding='utf-8') as f:
+                    f.writelines(original_lines)
+                logger.warning(
+                    f"↩️  Reverted fix for {file_path}:{line_number}: the result "
+                    f"failed syntax validation (would have committed broken code). "
+                    f"Flagged for manual review."
+                )
+                return False
+
+            if verdict == 'unknown':
+                logger.info(
+                    f"✅ Applied fix to {file_path}:{line_number} "
+                    f"(no syntax validator for this file type; single-line change only)"
+                )
+            else:
+                logger.info(
+                    f"✅ Applied fix to {file_path}:{line_number} (syntax validated)"
+                )
+            return True
 
         except Exception as e:
             logger.error(f"Error applying fix: {e}")

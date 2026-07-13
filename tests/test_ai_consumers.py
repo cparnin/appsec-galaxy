@@ -262,6 +262,97 @@ def test_code_fix_rejects_multiline_model_response(monkeypatch, tmp_path):
     assert result is None
 
 
+def test_validate_file_syntax_python(tmp_path):
+    good = tmp_path / "g.py"
+    good.write_text("def f():\n    return 1\n", encoding="utf-8")
+    bad = tmp_path / "b.py"
+    bad.write_text("def f(:\n    return 1\n", encoding="utf-8")
+    assert remediation.validate_file_syntax(str(good)) == "ok"
+    assert remediation.validate_file_syntax(str(bad)) == "broken"
+
+
+def test_validate_file_syntax_json(tmp_path):
+    good = tmp_path / "g.json"
+    good.write_text('{"a": 1}', encoding="utf-8")
+    bad = tmp_path / "b.json"
+    bad.write_text('{"a": ', encoding="utf-8")
+    assert remediation.validate_file_syntax(str(good)) == "ok"
+    assert remediation.validate_file_syntax(str(bad)) == "broken"
+
+
+def test_validate_file_syntax_unknown_extension(tmp_path):
+    f = tmp_path / "x.rs"
+    f.write_text("fn main() { let x = ( ;", encoding="utf-8")  # invalid, but no validator
+    assert remediation.validate_file_syntax(str(f)) == "unknown"
+
+
+def test_validate_file_syntax_js_when_node_available(tmp_path):
+    import shutil
+    if not shutil.which("node"):
+        pytest.skip("node not on PATH")
+    good = tmp_path / "g.js"
+    good.write_text("const x = 1;\n", encoding="utf-8")
+    bad = tmp_path / "b.js"
+    # the exact failure mode we saw live: a truncated multi-line call
+    bad.write_text("require('child_process').execFile('identify\n", encoding="utf-8")
+    assert remediation.validate_file_syntax(str(good)) == "ok"
+    assert remediation.validate_file_syntax(str(bad)) == "broken"
+
+
+def test_apply_fix_reverts_syntax_breaking_change(monkeypatch, tmp_path):
+    # Regression: a fix whose result no longer parses must be reverted, not
+    # committed. This is the guarantee that stops broken code reaching a PR.
+    _shared_client(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    original = "def handler(value):\n    return unsafe(value)\n"
+    src = tmp_path / "app.py"
+    src.write_text(original, encoding="utf-8")
+
+    remediator = remediation.AutoRemediator("openai")
+    fix = {
+        "file_path": "app.py",
+        "line_number": 2,
+        "fixed_line": "    return safe(value",  # unbalanced paren -> SyntaxError
+    }
+    result = remediator.apply_fix(fix, str(tmp_path))
+
+    assert result is False
+    assert src.read_text(encoding="utf-8") == original  # fully reverted
+
+
+def test_apply_fix_keeps_valid_change(monkeypatch, tmp_path):
+    _shared_client(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    src = tmp_path / "app.py"
+    src.write_text("def handler(value):\n    return unsafe(value)\n", encoding="utf-8")
+
+    remediator = remediation.AutoRemediator("openai")
+    fix = {
+        "file_path": "app.py",
+        "line_number": 2,
+        "fixed_line": "    return safe(value)",
+    }
+    result = remediator.apply_fix(fix, str(tmp_path))
+
+    assert result is True
+    assert "return safe(value)" in src.read_text(encoding="utf-8")
+
+
+def test_docker_missing_user_finding_not_auto_remediable(monkeypatch):
+    # Additive "missing USER" findings need line insertion, which the
+    # single-line replacer cannot express, so they must not be auto-fixed.
+    _shared_client(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    remediator = remediation.AutoRemediator("openai")
+    finding = {
+        "tool": "semgrep",
+        "check_id": "dockerfile.security.missing-user-entrypoint.missing-user-entrypoint",
+        "path": "Dockerfile",
+        "extra": {"message": "By not specifying a USER, commands run as root."},
+    }
+    assert remediator.can_remediate(finding) is False
+
+
 def test_create_remediation_pr_uses_configured_provider(monkeypatch):
     wrapped = _shared_client(monkeypatch, provider="anthropic")
     captured = {}

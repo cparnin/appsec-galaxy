@@ -62,7 +62,9 @@ run; verification evidence must reflect the current working tree.
 - AI verification failures preserve original findings.
 - Auto-remediation never edits protected workflow/credential files, accepts
   only one-line replacements, preserves indentation, and rejects multi-line
-  model output.
+  model output. Every applied fix is syntax-validated (`validate_file_syntax`)
+  and reverted if the result no longer parses, so broken code is never
+  committed. Additive findings (line insertion) are excluded from auto-fix.
 - Parse untrusted XML with hardened libraries and render untrusted report data
   with HTML autoescaping.
 
