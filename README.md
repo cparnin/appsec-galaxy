@@ -31,13 +31,23 @@ AI is opt-in. Rule-based scanning works without any AI key.
 
 ## Quick start
 
-Requirements: Python 3.11-3.13. Install Gitleaks, Trivy, and Syft separately
-for their respective scan and SBOM features.
+Requirements: Python 3.11-3.13, plus the external scanners (Gitleaks for
+secrets, Trivy for dependencies/IaC, Syft for SBOMs):
+
+```bash
+# macOS
+brew install gitleaks trivy syft
+
+# Linux (or see each project's releases page)
+# gitleaks: https://github.com/gitleaks/gitleaks/releases
+# trivy:    https://trivy.dev/latest/getting-started/installation/
+# syft:     https://github.com/anchore/syft/releases
+```
 
 ```bash
 git clone https://github.com/cparnin/appsec-galaxy.git
 cd appsec-galaxy
-python3.12 -m venv .venv
+python3 -m venv .venv    # any Python 3.11-3.13
 .venv/bin/python -m pip install -e ".[web,dev]"
 cp env.example .env
 ```

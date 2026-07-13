@@ -20,7 +20,7 @@ inputs:
   ai-model:
     description: 'Optional model override; defaults to the selected scan depth for the provider'
     required: false
-    default: ''''
+    default: ''
   auto-fix:
     description: 'Enable automatic remediation and PR creation'
     required: false

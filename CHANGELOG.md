@@ -37,6 +37,16 @@ semantic versioning.
   `partialFingerprints` (dedups alerts across runs and tracks fix/reopen),
   and rules link `helpUri` when the source tool provides a reference.
 
+### Fixed
+
+- Onboarding papercuts a fresh clone would hit: the client CI workflow pinned
+  a nonexistent `@v2.2.2` tag (now `@v2.3.0`), the README and mcp/README
+  hardcoded `python3.12` (now `python3` with the 3.11-3.13 range noted) and
+  named the external scanners without install commands (now `brew install`
+  plus release links), `start_web.sh` now also checks for syft and prints the
+  actual install command, and `action.yml`'s `ai-model` default was `''''`
+  (a literal apostrophe in YAML) instead of an empty string.
+
 ### Changed
 
 - Semgrep now runs with `--metrics=off`: `--config auto` sent scan telemetry

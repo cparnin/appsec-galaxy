@@ -9,12 +9,13 @@ It exposes 16 tools and four artifact resources over stdio.
 From the repository root:
 
 ```bash
-python3.12 -m venv .venv
+python3 -m venv .venv    # any Python 3.11-3.13
 .venv/bin/python -m pip install -e ".[web,dev]"
 ```
 
-Install Gitleaks, Trivy, and Syft separately for secrets, dependency, and SBOM
-features. Semgrep is installed with the Python project.
+Install Gitleaks, Trivy, and Syft for secrets, dependency, and SBOM features
+(macOS: `brew install gitleaks trivy syft`; Linux: see each project's releases
+page). Semgrep is installed with the Python project.
 
 Set credentials in the process that launches the MCP server:
 

@@ -85,14 +85,16 @@ echo "📋 Ensuring Python dependencies are installed..."
 
 echo "✅ Python dependencies ready"
 
-# Validate external scanners (Gitleaks/Trivy) are available
+# Validate external scanners (Gitleaks/Trivy/Syft) are available
 missing_tools=()
 command_exists gitleaks || missing_tools+=("gitleaks")
 command_exists trivy || missing_tools+=("trivy")
+command_exists syft || missing_tools+=("syft")
 
 if [ ${#missing_tools[@]} -ne 0 ]; then
-    echo "⚠️  Missing required CLI tools: ${missing_tools[*]}"
-    echo "    Install them before running scans (see README)."
+    echo "⚠️  Missing CLI tools: ${missing_tools[*]}"
+    echo "    macOS: brew install ${missing_tools[*]}"
+    echo "    Linux: see the install links in README.md (Quick start)"
 fi
 
 # Check for code quality linters (optional but recommended)
