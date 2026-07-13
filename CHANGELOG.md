@@ -7,6 +7,11 @@ semantic versioning.
 
 ### Security
 
+- Web server defaults fail closed. The dev server now binds `127.0.0.1` by
+  default instead of `0.0.0.0` (exposing it on all interfaces is now a
+  deliberate `HOST=0.0.0.0` opt-in), and CORS no longer falls back to a
+  wildcard when `APPSEC_WEB_CORS_ORIGINS` is unset (it adds no CORS headers
+  at all, so a malicious site cannot script the locally-running scanner).
 - Scan targets can be confined to an allowlist of directories, closing an
   arbitrary-path / source-disclosure hole on the two surfaces where the
   caller is not fully trusted. The MCP server now rejects `..` traversal and

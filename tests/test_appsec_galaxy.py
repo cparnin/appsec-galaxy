@@ -2997,6 +2997,20 @@ class TestWebAppSmoke:
         response = client.get('/this-route-does-not-exist-xyz')
         assert response.status_code == 404
 
+    def test_no_wildcard_cors_by_default(self, monkeypatch):
+        """With no APPSEC_WEB_CORS_ORIGINS, responses must not carry
+        Access-Control-Allow-Origin: * (a malicious site could otherwise
+        script the local scanner)."""
+        monkeypatch.delenv('APPSEC_WEB_CORS_ORIGINS', raising=False)
+        if 'appsec_galaxy.web_app' in sys.modules:
+            del sys.modules['appsec_galaxy.web_app']
+        from appsec_galaxy import web_app
+        web_app.app.config['TESTING'] = True
+        client = web_app.app.test_client()
+        resp = client.get('/health', headers={'Origin': 'http://evil.example'})
+        assert resp.headers.get('Access-Control-Allow-Origin') != '*'
+        assert 'Access-Control-Allow-Origin' not in resp.headers
+
 
 # ============================================================================
 # Fail-on-critical CI gate (scripts/fail_on_critical.py)

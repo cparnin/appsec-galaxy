@@ -48,12 +48,13 @@ logger = logging.getLogger(__name__)
 # Create Flask app with template directory
 app = Flask(__name__, template_folder='templates')
 
-# Restrict CORS unless explicitly configured
+# Restrict CORS unless explicitly configured. Only enable CORS for the
+# origins named in APPSEC_WEB_CORS_ORIGINS; when unset, add no CORS headers
+# at all (same-origin only). Never fall back to wildcard CORS: a malicious
+# site could otherwise script requests to a locally-running scanner.
 cors_origins = [origin.strip() for origin in os.getenv("APPSEC_WEB_CORS_ORIGINS", "").split(",") if origin.strip()]
 if cors_origins:
     CORS(app, resources={r"/*": {"origins": cors_origins}})
-else:
-    CORS(app)
 
 # Global config (same as CLI)
 WEB_CONFIG = None
@@ -854,7 +855,11 @@ if __name__ == '__main__':
 
     # Get port from environment variable (for Docker/App Runner compatibility)
     port = int(os.environ.get('PORT', 8000))
-    host = os.environ.get('HOST', '0.0.0.0')
+    # Bind loopback by default (fail closed). The scan/report routes serve
+    # source snippets and take a caller-supplied path, so exposing them on all
+    # interfaces must be a deliberate opt-in (HOST=0.0.0.0), ideally paired
+    # with APPSEC_WEB_API_KEY and APPSEC_ALLOWED_SCAN_ROOTS.
+    host = os.environ.get('HOST', '127.0.0.1')
 
     print("="*80)
     print("🔒 AppSec Galaxy Web Interface  ·  Application security, mapped.")
@@ -879,6 +884,7 @@ if __name__ == '__main__':
     if host == '0.0.0.0' and not os.environ.get("APPSEC_WEB_API_KEY"):
         print("⚠️ WARNING: APPSEC_WEB_API_KEY is not set while binding to 0.0.0.0")
         print("   Sensitive API routes may be accessible to anyone with network access.")
+        print("   Set APPSEC_WEB_API_KEY and APPSEC_ALLOWED_SCAN_ROOTS before exposing this.")
     print("="*80)
 
     # Run Flask development server
