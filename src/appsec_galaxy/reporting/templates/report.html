@@ -582,7 +582,7 @@
             {% for dep in dependency_health_data.dependencies[:30] %}
             <tr style="border-bottom: 1px solid #edf2f7;">
               <td style="padding: 0.6rem 0.75rem; font-weight: 500;">{{ dep.package_name }}</td>
-              <td style="padding: 0.6rem 0.75rem; color: #718096; font-family: monospace; font-size: 0.85rem;">{{ dep.installed_version or '—' }}</td>
+              <td style="padding: 0.6rem 0.75rem; color: #718096; font-family: monospace; font-size: 0.85rem;">{{ dep.installed_version or '-' }}</td>
               <td style="padding: 0.6rem 0.75rem; text-align: center;">
                 {% if dep.health_status == 'healthy' %}
                   <span style="background: #c6f6d5; color: #276749; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.8rem;">healthy</span>
@@ -643,7 +643,7 @@
       <div style="background: rgba(245, 101, 101, 0.1); border-left: 4px solid #f56565; padding: 1rem; border-radius: 6px; margin-top: 1rem;">
         <strong style="color: #c53030;">🗑️ Unused Dependencies:</strong>
         <p style="margin: 0.5rem 0 0; color: #4a5568; font-size: 0.9rem;">
-          No imports found for these declared dependencies — consider removing them:
+          No imports found for these declared dependencies, consider removing them:
         </p>
         <ul style="margin: 0.5rem 0 0 1rem; color: #4a5568; font-size: 0.9rem;">
           {% for dep in dependency_health_data.remove_candidates[:5] %}
@@ -749,7 +749,7 @@
         {% for group in ai_cross_file_data.compound_risk_groups %}
         <div style="background: rgba(255,255,255,0.08); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid {% if group.severity == 'critical' %}#fc8181{% elif group.severity == 'high' %}#f6ad55{% else %}#63b3ed{% endif %};">
           <div style="color: {% if group.severity == 'critical' %}#fc8181{% elif group.severity == 'high' %}#f6ad55{% else %}#63b3ed{% endif %}; font-weight: 600; margin-bottom: 0.5rem;">
-            {{ group.severity|upper }} — {{ group.risk }}
+            {{ group.severity|upper }}: {{ group.risk }}
           </div>
           {% if group.narrative %}
           <div style="color: rgba(255,255,255,0.7); font-size: 0.85rem;">{{ group.narrative }}</div>

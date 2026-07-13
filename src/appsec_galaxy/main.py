@@ -1160,8 +1160,8 @@ def select_ai_provider() -> str | None:
             key_env = PROVIDER_KEY_ENV[provider]
             key_status = "key set ✓" if api_key_present(provider) else f"{key_env} not set ✗"
             default_marker = " (current)" if provider == current else ""
-            print(f"   [{i}] {display_names.get(provider, provider)}{default_marker} — "
-                  f"default model {get_default_model(provider)} — {key_status}")
+            print(f"   [{i}] {display_names.get(provider, provider)}{default_marker}: "
+                  f"default model {get_default_model(provider)} ({key_status})")
         print("   [s] Skip AI features for this run")
 
         choice = input(

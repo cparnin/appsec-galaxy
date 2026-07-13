@@ -1119,7 +1119,7 @@
                         const option = document.createElement('option');
                         option.value = p.name;
                         const keyNote = p.key_set ? 'key set ✓' : `${p.key_env} missing ✗`;
-                        option.textContent = `${display[p.name] || p.name} (${p.default_model}) — ${keyNote}`;
+                        option.textContent = `${display[p.name] || p.name} (${p.default_model}): ${keyNote}`;
                         select.appendChild(option);
                     }
                     if (config.ai_provider) select.value = config.ai_provider;
