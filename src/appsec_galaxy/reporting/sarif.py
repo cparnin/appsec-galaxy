@@ -7,6 +7,7 @@ viewers, and other standard tooling. Written to outputs/report.sarif
 alongside the HTML report on every scan.
 """
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,18 @@ _SEVERITY_TO_LEVEL = {
     'info': 'note',
 }
 
+# GitHub's Security tab ranks alerts by the rule's security-severity property
+# (a string "0.0".."10.0"), not the SARIF level.
+_SEVERITY_TO_SECURITY_SEVERITY = {
+    'critical': '9.5',
+    'high': '8.0',
+    'error': '8.0',
+    'medium': '5.5',
+    'warning': '5.5',
+    'low': '3.0',
+    'info': '3.0',
+}
+
 
 def _relative_uri(path: str, repo_path: str) -> str:
     """SARIF artifact URIs should be repo-relative with forward slashes."""
@@ -40,6 +53,32 @@ def _relative_uri(path: str, repo_path: str) -> str:
     if repo and p.startswith(repo + '/'):
         p = p[len(repo) + 1:]
     return p.lstrip('/') or "unknown"
+
+
+def _help_uri(f: dict[str, Any]) -> str | None:
+    """Best-available reference URL from the source tool, if any."""
+    meta = (f.get('extra') or {}).get('metadata') or {}
+    if isinstance(meta, dict):
+        for key in ('source', 'shortlink'):
+            uri = meta.get(key)
+            if isinstance(uri, str) and uri.startswith('http'):
+                return uri
+    refs = f.get('references')
+    if isinstance(refs, list) and refs and isinstance(refs[0], str) and refs[0].startswith('http'):
+        return refs[0]
+    return None
+
+
+def _fingerprint(rule_id: str, uri: str, f: dict[str, Any]) -> str:
+    """Stable per-finding hash so GitHub dedups alerts across runs and tracks
+    fix/reopen lifecycle. Prefers the matched snippet (survives the finding
+    moving lines); falls back to the line number."""
+    snippet = ''
+    extra = f.get('extra') or {}
+    if isinstance(extra, dict):
+        snippet = str(extra.get('lines') or '').strip()
+    basis = f"{rule_id}:{uri}:{snippet or finding_line(f)}"
+    return hashlib.sha256(basis.encode('utf-8', 'replace')).hexdigest()
 
 
 def findings_to_sarif(findings: list[dict[str, Any]], repo_path: str = "") -> dict[str, Any]:
@@ -57,19 +96,30 @@ def findings_to_sarif(findings: list[dict[str, Any]], repo_path: str = "") -> di
             rules[rule_id] = {
                 "id": rule_id,
                 "shortDescription": {"text": message[:200] or rule_id},
-                "properties": {"tool": tool, "category": f.get('category', 'security')},
+                "properties": {
+                    "tool": tool,
+                    "category": f.get('category', 'security'),
+                    "security-severity": _SEVERITY_TO_SECURITY_SEVERITY.get(severity, '5.5'),
+                },
             }
+            help_uri = _help_uri(f)
+            if help_uri:
+                rules[rule_id]["helpUri"] = help_uri
 
+        uri = _relative_uri(finding_path(f), repo_path)
         result: dict[str, Any] = {
             "ruleId": rule_id,
             "level": _SEVERITY_TO_LEVEL.get(severity, 'warning'),
             "message": {"text": message or rule_id},
             "locations": [{
                 "physicalLocation": {
-                    "artifactLocation": {"uri": _relative_uri(finding_path(f), repo_path)},
+                    "artifactLocation": {"uri": uri},
                     "region": {"startLine": max(1, finding_line(f))},
                 }
             }],
+            "partialFingerprints": {
+                "primaryLocationLineHash": _fingerprint(rule_id, uri, f),
+            },
             "properties": {"tool": tool, "severity": severity},
         }
         # Carry exploit intel through when present (EPSS/KEV enrichment)

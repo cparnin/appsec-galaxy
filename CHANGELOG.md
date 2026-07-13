@@ -13,6 +13,10 @@ semantic versioning.
   the old deps-only behavior). Misconfig findings normalize to the canonical
   Finding with file/line, resolution guidance, and are excluded from
   dependency auto-fix.
+- SARIF export is now first-class for GitHub Code Scanning: each rule carries
+  `security-severity` (drives Security-tab ranking), each result carries
+  `partialFingerprints` (dedups alerts across runs and tracks fix/reopen),
+  and rules link `helpUri` when the source tool provides a reference.
 
 ### Fixed
 

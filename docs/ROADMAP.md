@@ -57,7 +57,7 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
 - **Docs:** README scanner list, CLAUDE.md scanner line, env.example if a new
   toggle is added (e.g. `APPSEC_TRIVY_SCANNERS`).
 
-### 1b. Make SARIF first-class for GitHub Code Scanning
+### 1b. Make SARIF first-class for GitHub Code Scanning [DONE 2026-07-13]
 - **Where:** `src/appsec_galaxy/reporting/sarif.py` (rules dict ~L47, result
   object ~L56-78).
 - **Add two things GitHub needs:**

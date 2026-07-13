@@ -17,7 +17,8 @@ remediations.
 - Cross-file correlation, attack-chain analysis, trend history, diff scoping,
   and baseline suppression.
 - Optional AI-native analysis: OpenAI (Responses API) or Anthropic (Messages API).
-- HTML and SARIF reports plus CycloneDX and SPDX SBOM output.
+- HTML and SARIF reports plus CycloneDX and SPDX SBOM output. SARIF carries
+  GitHub Code Scanning severity ranking and cross-run alert fingerprints.
 - CLI, local web interface, GitHub Action, and a 16-tool FastMCP server.
 
 AI is opt-in. Rule-based scanning works without any AI key.

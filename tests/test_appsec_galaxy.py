@@ -3153,6 +3153,53 @@ class TestSarifExport:
         assert len(sarif['runs'][0]['tool']['driver']['rules']) == 1
         assert len(sarif['runs'][0]['results']) == 3
 
+    def test_security_severity_on_rules(self):
+        """GitHub's Security tab ranks by rule security-severity, not level."""
+        from appsec_galaxy.reporting.sarif import findings_to_sarif
+        rules = findings_to_sarif(self._sample_findings(), '/repo')['runs'][0]['tool']['driver']['rules']
+        sev = {r['id']: r['properties']['security-severity'] for r in rules}
+        assert sev['js.sqli'] == '9.5'           # critical
+        assert sev['aws-key'] == '9.5'           # secrets default critical
+        assert sev['CVE-2021-23337'] == '8.0'    # high
+        assert sev['W0611'] == '3.0'             # low
+
+    def test_partial_fingerprints_stable_and_distinct(self):
+        """Fingerprints let GitHub dedup alerts across runs: identical
+        findings hash identically, different findings differently."""
+        from appsec_galaxy.reporting.sarif import findings_to_sarif
+        results = findings_to_sarif(self._sample_findings(), '/repo')['runs'][0]['results']
+        hashes = [r['partialFingerprints']['primaryLocationLineHash'] for r in results]
+        assert all(len(h) == 64 and int(h, 16) >= 0 for h in hashes)
+        assert len(set(hashes)) == len(hashes)  # distinct findings, distinct hashes
+        rerun = findings_to_sarif(self._sample_findings(), '/repo')['runs'][0]['results']
+        assert [r['partialFingerprints']['primaryLocationLineHash'] for r in rerun] == hashes
+
+    def test_fingerprint_prefers_snippet_over_line(self):
+        """Same snippet moved to a new line must keep its fingerprint."""
+        from appsec_galaxy.reporting.sarif import findings_to_sarif
+        f1 = {'tool': 'semgrep', 'check_id': 'sqli', 'path': 'a.py',
+              'start': {'line': 10}, 'extra': {'message': 'm', 'lines': 'db.query(x)'}, 'severity': 'high'}
+        f2 = {**f1, 'start': {'line': 55}}
+        h = [r['partialFingerprints']['primaryLocationLineHash']
+             for r in findings_to_sarif([f1, f2], '')['runs'][0]['results']]
+        assert h[0] == h[1]
+
+    def test_help_uri_from_source_tool(self):
+        from appsec_galaxy.reporting.sarif import findings_to_sarif
+        semgrep = {'tool': 'semgrep', 'check_id': 'sqli', 'path': 'a.py', 'start': {'line': 1},
+                   'extra': {'message': 'm', 'metadata': {'source': 'https://semgrep.dev/r/sqli'}},
+                   'severity': 'high'}
+        trivy = {'tool': 'trivy', 'vulnerability_id': 'CVE-1', 'path': 'lock', 'line': 1,
+                 'description': 'd', 'severity': 'high',
+                 'references': ['https://avd.aquasec.com/nvd/cve-1']}
+        no_uri = {'tool': 'gitleaks', 'RuleID': 'aws-key', 'File': 'c.py', 'StartLine': 1,
+                  'Description': 'AWS key'}
+        rules = {r['id']: r for r in
+                 findings_to_sarif([semgrep, trivy, no_uri], '')['runs'][0]['tool']['driver']['rules']}
+        assert rules['sqli']['helpUri'] == 'https://semgrep.dev/r/sqli'
+        assert rules['CVE-1']['helpUri'] == 'https://avd.aquasec.com/nvd/cve-1'
+        assert 'helpUri' not in rules['aws-key']
+
     def test_generate_writes_file(self, tmp_path):
         from appsec_galaxy.reporting.sarif import generate_sarif_report
         out = generate_sarif_report(self._sample_findings(), tmp_path, '/repo')
