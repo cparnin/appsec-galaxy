@@ -33,7 +33,7 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
   `APPSEC_TRIVY_SCANNERS`),
   code-quality linters (7 langs), AI scanner, AST cross-file attack chains,
   AI cross-file. EPSS + CISA KEV enrichment (`vuln_intel.py`). SBOM
-  (CycloneDX + SPDX). 411 tests.
+  (CycloneDX + SPDX). 424 tests.
 
 ## Tier 1 - easy buttons (one-flag / ~20-line wins)
 
