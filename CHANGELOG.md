@@ -5,6 +5,8 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.4.0] - 2026-07-13
+
 ### Security
 
 - PR body text is sanitized against Markdown injection. Auto-remediation PR

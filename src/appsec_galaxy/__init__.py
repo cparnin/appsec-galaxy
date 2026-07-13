@@ -1,4 +1,4 @@
 """AppSec Galaxy application-security scanner."""
 
 __product_name__ = "AppSec Galaxy"
-__version__ = "2.3.0"
+__version__ = "2.4.0"
