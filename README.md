@@ -4,10 +4,20 @@
 
 **Application security, mapped.**
 
+[![Tests](https://github.com/cparnin/appsec-galaxy/actions/workflows/tests.yml/badge.svg)](https://github.com/cparnin/appsec-galaxy/actions/workflows/tests.yml)
+[![Self-Scan](https://github.com/cparnin/appsec-galaxy/actions/workflows/self-scan.yml/badge.svg)](https://github.com/cparnin/appsec-galaxy/actions/workflows/self-scan.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 AppSec Galaxy combines rule-based application security scanners with optional
 AI analysis (OpenAI or Anthropic) to map findings across files, identify attack
 chains, generate reports and SBOMs, and propose tightly constrained single-line
 remediations.
+
+**We dogfood it.** AppSec Galaxy scans its own code on every push and runs a
+weekly AI deep scan ([self-scan.yml](.github/workflows/self-scan.yml)); the
+Self-Scan badge above reflects the latest run. The same untrusted-input
+hardening it enforces on your repos (no lockfile scripts on hostile code, no
+auto-fix on untrusted PRs, allowlisted scan paths) it applies to itself.
 
 ## What it includes
 
