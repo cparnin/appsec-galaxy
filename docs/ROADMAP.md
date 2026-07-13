@@ -29,14 +29,15 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
 - Auto-remediation is syntax-gated: every applied single-line fix passes
   `validate_file_syntax()` and is reverted if it no longer parses. Additive
   findings (Docker missing-USER) are excluded (replace-mode cannot insert).
-- Scanners: semgrep (SAST), gitleaks (secrets), trivy (deps only, `vuln`),
+- Scanners: semgrep (SAST), gitleaks (secrets), trivy (deps + IaC misconfig,
+  `APPSEC_TRIVY_SCANNERS`),
   code-quality linters (7 langs), AI scanner, AST cross-file attack chains,
   AI cross-file. EPSS + CISA KEV enrichment (`vuln_intel.py`). SBOM
   (CycloneDX + SPDX). 411 tests.
 
 ## Tier 1 - easy buttons (one-flag / ~20-line wins)
 
-### 1a. Wire in Trivy IaC/misconfig (+ license) scanning
+### 1a. Wire in Trivy IaC/misconfig (+ license) scanning [DONE 2026-07-13]
 - **Where:** `src/appsec_galaxy/scanners/trivy.py`. Two `--scanners vuln`
   call sites (approx lines 98 and 140).
 - **Change:** run `--scanners vuln,misconfig` (add `license` if wanted).

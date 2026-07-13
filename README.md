@@ -11,7 +11,8 @@ remediations.
 
 ## What it includes
 
-- Semgrep SAST, Gitleaks secret detection, and Trivy dependency scanning.
+- Semgrep SAST, Gitleaks secret detection, and Trivy dependency plus IaC/config
+  misconfiguration scanning (Terraform, CloudFormation, Kubernetes, Dockerfile).
 - Language-specific code-quality adapters for common ecosystems.
 - Cross-file correlation, attack-chain analysis, trend history, diff scoping,
   and baseline suppression.

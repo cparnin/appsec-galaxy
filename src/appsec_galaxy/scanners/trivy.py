@@ -13,7 +13,7 @@ import logging
 from typing import Any
 
 # Import configuration constants
-from appsec_galaxy.config import format_subprocess_error
+from appsec_galaxy.config import TRIVY_SCANNERS, format_subprocess_error
 from appsec_galaxy.finding import Finding
 from .validation import validate_binary_path, validate_repo_path
 
@@ -88,14 +88,14 @@ def _run_trivy_scan(repo_path: str, output_file: Path, scan_level: str = "critic
         # Severity filter follows scan level: "all" includes medium/low, otherwise crit/high.
         sev = "CRITICAL,HIGH,MEDIUM,LOW" if scan_level == "all" else "CRITICAL,HIGH"
 
-        # Run Trivy filesystem scan for vulnerabilities
-        # Enable all scanners to detect Gradle/Maven dependencies
+        # Run Trivy filesystem scan for vulnerabilities plus (by default)
+        # IaC/config misconfigurations; APPSEC_TRIVY_SCANNERS controls the set.
         cmd = [
             trivy_bin, "fs",
             "--format", "json",
             "--output", str(output_file),
             "--severity", sev,
-            "--scanners", "vuln",
+            "--scanners", TRIVY_SCANNERS,
             "--list-all-pkgs",  # List all packages even without lockfiles
             "--quiet",
             str(repo_path_obj)
@@ -123,7 +123,11 @@ def _run_trivy_scan(repo_path: str, output_file: Path, scan_level: str = "critic
             try:
                 with open(output_file, encoding='utf-8') as f:
                     root_data = json.load(f)
-                if not root_data.get('Results'):
+                root_results = root_data.get('Results') or []
+                # Misconfig results alone (e.g. a Dockerfile hit) must not mask
+                # a missing-lockfile situation, so key the fallback off
+                # vulnerability results specifically.
+                if not any(r.get('Vulnerabilities') for r in root_results):
                     vendor_dirs = ['node_modules', 'vendor']
                     extra_results = []
                     for vdir in vendor_dirs:
@@ -132,6 +136,8 @@ def _run_trivy_scan(repo_path: str, output_file: Path, scan_level: str = "critic
                             continue
                         logger.info(f"Root scan found no results; scanning vendor dir: {vendor_path}")
                         tmp_out = output_file.parent / f"trivy-{vdir}-tmp.json"
+                        # Vendor dirs are vuln-only: misconfig hits inside
+                        # node_modules/vendor are third-party noise.
                         vendor_cmd = [
                             trivy_bin, "fs",
                             "--format", "json",
@@ -151,7 +157,7 @@ def _run_trivy_scan(repo_path: str, output_file: Path, scan_level: str = "critic
                             extra_results.extend(vendor_data.get('Results', []))
                             tmp_out.unlink()
                     if extra_results:
-                        root_data['Results'] = extra_results
+                        root_data['Results'] = root_results + extra_results
                         with open(output_file, 'w', encoding='utf-8') as f:
                             json.dump(root_data, f)
                         logger.info(f"Vendor fallback added {len(extra_results)} result sets to Trivy output")
@@ -202,6 +208,7 @@ def _parse_trivy_results(output_file: Path, repo_path: str) -> list[dict[str, An
         # Count what was scanned
         scanned_targets = len(results)
         total_vulnerabilities = 0
+        total_misconfigs = 0
 
         for result in results:
             target = result.get("Target", "unknown")
@@ -211,10 +218,18 @@ def _parse_trivy_results(output_file: Path, repo_path: str) -> list[dict[str, An
             for vuln in vulnerabilities:
                 standardized_findings.append(Finding.from_trivy(vuln, target).to_dict())
 
-        if scanned_targets > 0 and total_vulnerabilities == 0:
-            logger.info(f"Trivy scanned {scanned_targets} dependency files - no vulnerabilities found (dependencies are clean)")
-        elif total_vulnerabilities > 0:
-            logger.info(f"Trivy found {len(standardized_findings)} dependency vulnerabilities across {scanned_targets} files")
+            misconfigs = result.get("Misconfigurations", [])
+            total_misconfigs += len(misconfigs)
+            for misconf in misconfigs:
+                standardized_findings.append(Finding.from_trivy_misconfig(misconf, target).to_dict())
+
+        if scanned_targets > 0 and not standardized_findings:
+            logger.info(f"Trivy scanned {scanned_targets} targets - no vulnerabilities or misconfigurations found")
+        elif standardized_findings:
+            logger.info(
+                f"Trivy found {total_vulnerabilities} dependency vulnerabilities and "
+                f"{total_misconfigs} misconfigurations across {scanned_targets} targets"
+            )
         else:
             logger.info("Trivy found no dependency files to scan")
             # Check if this is a Gradle/Maven project without lockfiles

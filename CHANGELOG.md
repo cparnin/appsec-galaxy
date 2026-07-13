@@ -5,6 +5,15 @@ semantic versioning.
 
 ## Unreleased
 
+### Added
+
+- Trivy now scans IaC and config misconfigurations (Terraform, CloudFormation,
+  K8s manifests, Dockerfile) alongside dependency CVEs. New
+  `APPSEC_TRIVY_SCANNERS` env var (default `vuln,misconfig`; set `vuln` for
+  the old deps-only behavior). Misconfig findings normalize to the canonical
+  Finding with file/line, resolution guidance, and are excluded from
+  dependency auto-fix.
+
 ### Fixed
 
 - Auto-remediation no longer commits broken code. Every applied single-line

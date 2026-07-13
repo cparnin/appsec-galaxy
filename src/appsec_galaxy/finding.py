@@ -122,3 +122,41 @@ class Finding:
             message=description,
             payload=payload,
         )
+
+    @classmethod
+    def from_trivy_misconfig(cls, misconf: dict[str, Any], target: str) -> "Finding":
+        """Build the standardized trivy IaC/config misconfiguration finding.
+
+        Trivy misconfig entries (Results[].Misconfigurations) carry
+        ID/Title/Severity/Description/Resolution plus CauseMetadata with the
+        file location, a different shape from the Vulnerabilities array.
+        No pkg_name/fixed_version on purpose: dependency auto-fix keys off
+        those and must never pick up misconfig findings."""
+        severity = misconf.get("Severity", "UNKNOWN").lower()
+        cause = misconf.get("CauseMetadata") or {}
+        line = int(cause.get("StartLine") or 1)
+        misconfig_id = misconf.get("ID", "")
+        title = misconf.get("Title") or misconfig_id or "Misconfiguration"
+        description = f"{misconfig_id}: {title}" if misconfig_id else title
+        payload = {
+            "path": target,
+            "line": line,
+            "description": description,
+            "severity": severity,
+            "vulnerability_id": misconfig_id,
+            "misconfig_description": misconf.get("Description", ""),
+            "resolution": misconf.get("Resolution", ""),
+            "references": misconf.get("References", []),
+            "finding_type": "misconfiguration",
+            "tool": "trivy",
+            "category": "security",
+        }
+        return cls(
+            tool="trivy",
+            category="security",
+            severity=severity,
+            path=target,
+            line=line,
+            message=description,
+            payload=payload,
+        )

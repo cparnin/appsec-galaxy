@@ -170,6 +170,35 @@ def sample_trivy_output():
 
 
 @pytest.fixture
+def sample_trivy_misconfig_output():
+    """Sample Trivy JSON output with an IaC misconfiguration result."""
+    return {
+        "SchemaVersion": 2,
+        "ArtifactName": ".",
+        "ArtifactType": "filesystem",
+        "Results": [
+            {
+                "Target": "Dockerfile",
+                "Class": "config",
+                "Type": "dockerfile",
+                "Misconfigurations": [
+                    {
+                        "ID": "DS002",
+                        "AVDID": "AVD-DS-0002",
+                        "Title": "Image user should not be 'root'",
+                        "Description": "Running containers with 'root' user can lead to a container escape situation.",
+                        "Resolution": "Add 'USER <non root user name>' line to the Dockerfile",
+                        "Severity": "HIGH",
+                        "References": ["https://avd.aquasec.com/misconfig/ds002"],
+                        "CauseMetadata": {"Provider": "Dockerfile", "StartLine": 1, "EndLine": 12},
+                    }
+                ],
+            }
+        ],
+    }
+
+
+@pytest.fixture
 def mock_subprocess_success():
     """Mock successful subprocess.run call."""
     mock_result = Mock()

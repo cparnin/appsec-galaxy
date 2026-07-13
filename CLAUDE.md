@@ -161,7 +161,7 @@ src/appsec_galaxy/
 ├── scan_history.py          # Trend history (new vs fixed per scan)
 ├── vuln_intel.py            # EPSS / CISA-KEV enrichment for Trivy CVEs
 ├── sbom_generator.py        # CycloneDX + SPDX SBOMs
-├── scanners/                # semgrep, gitleaks, trivy, ai_scanner, linters
+├── scanners/                # semgrep, gitleaks, trivy (deps + IaC misconfig), ai_scanner, linters
 ├── auto_remediation/        # one-line AI fixes + PR creation (remediation.py)
 ├── reporting/               # html.py, sarif.py, ai_summary.py + templates
 └── templates/index.html     # web UI (single file, inline CSS/JS)
@@ -212,7 +212,9 @@ loudly on bad values. Key groups:
   `APPSEC_AI_SCAN_MAX_FILES`, `APPSEC_AI_SCAN_TIER` (privacy: 1 none,
   2 snippets, 3 full source), `APPSEC_AI_CROSS_FILE_MAX_*` cost caps
 - Scanning: `APPSEC_SCAN_LEVEL` (security), `APPSEC_CODE_QUALITY_MIN_SEVERITY`
-  (quality; independent filters), `APPSEC_TOOLS`, `APPSEC_DIFF_ONLY`/`_BASE`
+  (quality; independent filters), `APPSEC_TOOLS`, `APPSEC_DIFF_ONLY`/`_BASE`,
+  `APPSEC_TRIVY_SCANNERS` (default `vuln,misconfig`; `vuln` reverts to
+  dependency CVEs only)
 - Auto-fix: `APPSEC_AUTO_FIX`, `APPSEC_AUTO_FIX_MODE` (1 SAST, 2 deps,
   3 both, 4 skip), `GITHUB_TOKEN` (repo scope, PR creation only)
 - Web: `HOST` (default 0.0.0.0), `PORT`, `APPSEC_WEB_API_KEY`,

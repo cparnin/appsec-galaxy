@@ -473,6 +473,89 @@ class TestTrivy:
         results = run_trivy('/invalid/path')
         assert results == []
 
+    @patch('appsec_galaxy.scanners.trivy.subprocess.run')
+    @patch('appsec_galaxy.scanners.trivy.validate_repo_path')
+    def test_command_includes_misconfig_scanner(
+        self, mock_validate_repo, mock_subprocess, mock_repo, output_dir
+    ):
+        """Root scan must request the configured scanner set (vuln,misconfig)."""
+        mock_validate_repo.return_value = mock_repo
+
+        result = Mock()
+        result.returncode = 0
+        result.stdout = ""
+        result.stderr = ""
+        mock_subprocess.return_value = result
+
+        run_trivy(str(mock_repo), str(output_dir))
+        cmd = mock_subprocess.call_args_list[0][0][0]
+        assert cmd[cmd.index("--scanners") + 1] == "vuln,misconfig"
+
+    @patch('appsec_galaxy.scanners.trivy.subprocess.run')
+    @patch('appsec_galaxy.scanners.trivy.validate_repo_path')
+    def test_misconfigurations_normalized(
+        self, mock_validate_repo, mock_subprocess,
+        mock_repo, output_dir, sample_trivy_misconfig_output
+    ):
+        """Misconfigurations arrays parse into canonical findings with file/line."""
+        mock_validate_repo.return_value = mock_repo
+
+        def create_output_file(*args, **kwargs):
+            output_file = output_dir / "trivy-sca.json"
+            output_file.write_text(json.dumps(sample_trivy_misconfig_output))
+            result = Mock()
+            result.returncode = 0
+            result.stdout = ""
+            result.stderr = ""
+            return result
+
+        mock_subprocess.side_effect = create_output_file
+
+        results = run_trivy(str(mock_repo), str(output_dir))
+        assert len(results) == 1
+        f = results[0]
+        assert f['tool'] == 'trivy'
+        assert f['finding_type'] == 'misconfiguration'
+        assert f['path'] == 'Dockerfile'
+        assert f['line'] == 1
+        assert f['severity'] == 'high'
+        assert f['vulnerability_id'] == 'DS002'
+        assert 'root' in f['description']
+        assert f['resolution'].startswith("Add 'USER")
+        # Must never look upgradeable to the dependency auto-fixer
+        assert 'fixed_version' not in f
+        assert 'pkg_name' not in f
+
+    @patch('appsec_galaxy.scanners.trivy.subprocess.run')
+    @patch('appsec_galaxy.scanners.trivy.validate_repo_path')
+    def test_vendor_fallback_preserves_misconfigs(
+        self, mock_validate_repo, mock_subprocess,
+        mock_repo, output_dir, sample_trivy_misconfig_output, sample_trivy_output
+    ):
+        """A misconfig-only root result must still trigger the vendor vuln
+        fallback, and the fallback must merge (not replace) root results."""
+        mock_validate_repo.return_value = mock_repo
+        (mock_repo / 'node_modules').mkdir()
+
+        def run_side_effect(cmd, **kwargs):
+            out = Path(cmd[cmd.index("--output") + 1])
+            if 'node_modules' in cmd[-1]:
+                out.write_text(json.dumps(sample_trivy_output))
+            else:
+                out.write_text(json.dumps(sample_trivy_misconfig_output))
+            result = Mock()
+            result.returncode = 0
+            result.stdout = ""
+            result.stderr = ""
+            return result
+
+        mock_subprocess.side_effect = run_side_effect
+
+        results = run_trivy(str(mock_repo), str(output_dir))
+        tools = {f.get('finding_type', 'vulnerability') for f in results}
+        assert tools == {'misconfiguration', 'vulnerability'}
+        assert len(results) == 2
+
 
 # ============================================================================
 # DEPENDENCY ANALYZER TESTS
@@ -2788,7 +2871,8 @@ class TestAppSecGalaxySettings:
         for var in ('APPSEC_CODE_QUALITY', 'APPSEC_CODE_QUALITY_MIN_SEVERITY',
                     'APPSEC_AI_SCAN', 'APPSEC_AI_SCAN_DEPTH',
                     'APPSEC_AI_SCAN_MAX_FILES', 'APPSEC_AI_SCAN_TIER',
-                    'APPSEC_DEPENDENCY_ANALYSIS', 'APPSEC_DEP_HEALTH_CHECK'):
+                    'APPSEC_DEPENDENCY_ANALYSIS', 'APPSEC_DEP_HEALTH_CHECK',
+                    'APPSEC_TRIVY_SCANNERS'):
             monkeypatch.delenv(var, raising=False)
         for k, v in env.items():
             monkeypatch.setenv(k, v)
@@ -2804,6 +2888,7 @@ class TestAppSecGalaxySettings:
         assert s.ai_scan_tier == 3
         assert s.dependency_analysis is True
         assert s.dep_health_check is True
+        assert s.trivy_scanners == 'vuln,misconfig'
 
     def test_valid_overrides(self, monkeypatch):
         s = self._fresh(monkeypatch,
@@ -2836,6 +2921,19 @@ class TestAppSecGalaxySettings:
     def test_tier_out_of_range_fails(self, monkeypatch):
         with pytest.raises(Exception):
             self._fresh(monkeypatch, APPSEC_AI_SCAN_TIER='9')
+
+    def test_trivy_scanners_normalized(self, monkeypatch):
+        s = self._fresh(monkeypatch, APPSEC_TRIVY_SCANNERS=' VULN , misconfig ,vuln')
+        assert s.trivy_scanners == 'vuln,misconfig'  # lowercased, deduped
+
+    def test_trivy_scanners_vuln_only(self, monkeypatch):
+        s = self._fresh(monkeypatch, APPSEC_TRIVY_SCANNERS='vuln')
+        assert s.trivy_scanners == 'vuln'
+
+    def test_invalid_trivy_scanners_fails_loudly(self, monkeypatch):
+        with pytest.raises(Exception) as exc_info:
+            self._fresh(monkeypatch, APPSEC_TRIVY_SCANNERS='vuln,license')
+        assert 'APPSEC_TRIVY_SCANNERS' in str(exc_info.value)
 
     def test_module_constants_exposed(self):
         """Backwards-compat constant names must survive the migration."""
@@ -2915,6 +3013,38 @@ class TestFinding:
         assert d['severity'] == 'unknown'
         assert d['pkg_name'] == ''
         assert d['fixed_version'] == ''
+
+    def test_from_trivy_misconfig_dict_shape(self):
+        from appsec_galaxy.finding import Finding
+        misconf = {
+            'ID': 'DS002', 'Title': "Image user should not be 'root'",
+            'Description': 'Root user risk', 'Resolution': 'Add USER line',
+            'Severity': 'HIGH', 'References': ['https://avd.aquasec.com/misconfig/ds002'],
+            'CauseMetadata': {'StartLine': 3, 'EndLine': 12},
+        }
+        d = Finding.from_trivy_misconfig(misconf, 'Dockerfile').to_dict()
+        assert d == {
+            'path': 'Dockerfile',
+            'line': 3,
+            'description': "DS002: Image user should not be 'root'",
+            'severity': 'high',
+            'vulnerability_id': 'DS002',
+            'misconfig_description': 'Root user risk',
+            'resolution': 'Add USER line',
+            'references': ['https://avd.aquasec.com/misconfig/ds002'],
+            'finding_type': 'misconfiguration',
+            'tool': 'trivy',
+            'category': 'security',
+        }
+
+    def test_from_trivy_misconfig_missing_fields_defaults(self):
+        from appsec_galaxy.finding import Finding
+        d = Finding.from_trivy_misconfig({}, 'main.tf').to_dict()
+        assert d['severity'] == 'unknown'
+        assert d['line'] == 1
+        assert d['description'] == 'Misconfiguration'
+        assert 'fixed_version' not in d
+        assert 'pkg_name' not in d
 
     def test_to_dict_returns_copy(self):
         """Mutating the emitted dict must not corrupt the Finding."""

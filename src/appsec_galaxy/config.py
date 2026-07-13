@@ -120,6 +120,11 @@ class AppSecGalaxySettings(BaseSettings):
     dependency_analysis: bool = Field(default=True, alias="APPSEC_DEPENDENCY_ANALYSIS")
     dep_health_check: bool = Field(default=True, alias="APPSEC_DEP_HEALTH_CHECK")
 
+    # Trivy scanner selection: comma-separated subset of {vuln, misconfig}.
+    # misconfig covers IaC and config files (Terraform, CloudFormation, K8s
+    # manifests, Dockerfile). Set to "vuln" for the old deps-only behavior.
+    trivy_scanners: str = Field(default="vuln,misconfig", alias="APPSEC_TRIVY_SCANNERS")
+
     @field_validator("code_quality_min_severity", mode="before")
     @classmethod
     def _check_severity(cls, v: str) -> str:
@@ -138,6 +143,17 @@ class AppSecGalaxySettings(BaseSettings):
             raise ValueError(f"APPSEC_AI_SCAN_DEPTH must be one of {sorted(valid)}, got '{v}'")
         return v
 
+    @field_validator("trivy_scanners", mode="before")
+    @classmethod
+    def _check_trivy_scanners(cls, v: str) -> str:
+        parts = [p.strip().lower() for p in str(v).split(",") if p.strip()]
+        valid = {"vuln", "misconfig"}
+        if not parts or any(p not in valid for p in parts):
+            raise ValueError(
+                f"APPSEC_TRIVY_SCANNERS must be a comma-separated subset of {sorted(valid)}, got '{v}'"
+            )
+        return ",".join(dict.fromkeys(parts))
+
 
 settings = AppSecGalaxySettings()
 
@@ -148,6 +164,7 @@ ENABLE_AI_SCAN = settings.ai_scan
 AI_SCAN_DEPTH = settings.ai_scan_depth
 AI_SCAN_MAX_FILES = settings.ai_scan_max_files
 AI_SCAN_TIER = settings.ai_scan_tier
+TRIVY_SCANNERS = settings.trivy_scanners
 
 # Minimum confidence threshold for AI findings (0.0-1.0).
 # Hardcoded: nobody tunes this in production, and exposing it as an env var
