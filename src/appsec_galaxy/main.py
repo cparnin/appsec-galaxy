@@ -869,6 +869,10 @@ def run_auto_mode() -> list[dict[str, Any]]:
                 trivy_findings = [f for f in enhanced_findings if f.get('tool') == 'trivy'
                                   and f.get('finding_type') != 'misconfiguration']
                 dep_health_report = run_dependency_analysis(str(repo_path), trivy_findings=trivy_findings)
+                # Fold reachability into CVE priority (imported + exploited
+                # escalates, never-imported de-escalates)
+                from appsec_galaxy.vuln_intel import apply_reachability
+                apply_reachability(enhanced_findings, dep_health_report)
                 if dep_health_report and dep_health_report.analyzed_dependencies > 0:
                     print(f"✅ Analyzed {dep_health_report.analyzed_dependencies} dependencies: {dep_health_report.strategy_breakdown}")
                     # Save raw output
@@ -1530,8 +1534,11 @@ def main(argv: list[str] | None = None) -> None:
                 if DEPENDENCY_ANALYSIS_AVAILABLE and ENABLE_DEPENDENCY_ANALYSIS:
                     print("📦 Running dependency code-path analysis...")
                     try:
-                        trivy_findings_interactive = [f for f in enhanced_findings if f.get('tool') == 'trivy']
+                        trivy_findings_interactive = [f for f in enhanced_findings if f.get('tool') == 'trivy'
+                                                      and f.get('finding_type') != 'misconfiguration']
                         dep_health_report_interactive = run_dependency_analysis(repo_path, trivy_findings=trivy_findings_interactive)
+                        from appsec_galaxy.vuln_intel import apply_reachability
+                        apply_reachability(enhanced_findings, dep_health_report_interactive)
                         if dep_health_report_interactive and dep_health_report_interactive.analyzed_dependencies > 0:
                             print(f"✅ Analyzed {dep_health_report_interactive.analyzed_dependencies} dependencies: {dep_health_report_interactive.strategy_breakdown}")
                             dep_output_path = output_dir / "raw" / "dependency-health.json"

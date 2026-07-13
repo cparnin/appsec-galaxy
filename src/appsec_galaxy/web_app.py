@@ -376,6 +376,8 @@ def scan_repository():
                         trivy_web = [f for f in enhanced_findings if f.get('tool') == 'trivy'
                                      and f.get('finding_type') != 'misconfiguration']
                         dep_health_data_web = run_dependency_analysis(str(validated_path), trivy_findings=trivy_web)
+                        from appsec_galaxy.vuln_intel import apply_reachability
+                        apply_reachability(enhanced_findings, dep_health_data_web)
                         if dep_health_data_web and dep_health_data_web.analyzed_dependencies > 0:
                             print(f"📦 Analyzed {dep_health_data_web.analyzed_dependencies} dependencies")
                             dep_out = output_dir / "raw" / "dependency-health.json"

@@ -85,7 +85,7 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (429 tests, ~6s). Personal project of cparnin; MIT licensed.
+suite (443 tests, ~6s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
@@ -159,7 +159,7 @@ src/appsec_galaxy/
 ├── finding.py               # Canonical Finding dataclass (scanner boundary)
 ├── scan_filters.py          # .appsec-galaxy-ignore baseline + APPSEC_DIFF_ONLY
 ├── scan_history.py          # Trend history (new vs fixed per scan)
-├── vuln_intel.py            # EPSS / CISA-KEV enrichment for Trivy CVEs
+├── vuln_intel.py            # EPSS / CISA-KEV enrichment + reachability-based CVE priority
 ├── sbom_generator.py        # CycloneDX + SPDX SBOMs
 ├── scanners/                # semgrep, gitleaks, trivy (deps + IaC misconfig), ai_scanner, linters
 ├── auto_remediation/        # one-line AI fixes + PR creation (remediation.py)

@@ -848,6 +848,15 @@
                   </div>
                 </div>
               {% endif %}
+              {% if f.get('reachability') %}
+                <div style="margin-top: 0.3rem; font-size: 0.8rem; color: #718096;">
+                  {% if f.get('in_kev') %}<strong style="color: #f87171;">Actively exploited (KEV)</strong> | {% endif %}
+                  {% if f.get('epss_score') is not none and f.get('epss_score') is defined %}EPSS {{ (f.get('epss_score', 0) * 100) | round(1) }}% | {% endif %}
+                  Reachability: <strong>{{ f.get('reachability') }}</strong>
+                  {%- if f.get('reachability_detail') %} ({{ f.get('reachability_detail') }}){% endif %}
+                  {% if f.get('risk_priority') %} | Priority: <strong>{{ f.get('risk_priority') }}</strong>{% endif %}
+                </div>
+              {% endif %}
               {% if f.get('ai_remediation') %}
                 <div style="margin-top: 0.5rem; background: rgba(56, 161, 105, 0.08); border-left: 3px solid #38a169; padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.85rem;">
                   <strong style="color: #38a169;">Remediation:</strong> {{ f.ai_remediation }}

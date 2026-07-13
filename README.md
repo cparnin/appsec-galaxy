@@ -16,6 +16,10 @@ remediations.
 - Language-specific code-quality adapters for common ecosystems.
 - Cross-file correlation, attack-chain analysis, trend history, diff scoping,
   and baseline suppression.
+- Dependency CVEs ranked by real risk: EPSS exploit probability and CISA KEV
+  membership combined with code reachability (a CVE in a dep your code never
+  imports is de-escalated; an exploited CVE in a dep you actually call rises
+  to the top).
 - Optional AI-native analysis: OpenAI (Responses API) or Anthropic (Messages API).
 - HTML and SARIF reports plus CycloneDX and SPDX SBOM output. SARIF carries
   GitHub Code Scanning severity ranking and cross-run alert fingerprints.

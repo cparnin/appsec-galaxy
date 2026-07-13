@@ -122,8 +122,9 @@ def findings_to_sarif(findings: list[dict[str, Any]], repo_path: str = "") -> di
             },
             "properties": {"tool": tool, "severity": severity},
         }
-        # Carry exploit intel through when present (EPSS/KEV enrichment)
-        for key in ('epss_score', 'in_kev', 'exploit_priority'):
+        # Carry exploit intel and reachability through when present
+        for key in ('epss_score', 'in_kev', 'exploit_priority',
+                    'reachability', 'risk_priority'):
             if key in f:
                 result["properties"][key] = f[key]
         results.append(result)

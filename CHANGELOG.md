@@ -18,6 +18,14 @@ semantic versioning.
   get_scan_findings/get_trivy_findings return them (finding_type
   "misconfiguration"), and the Action job summary plus fail-on-critical
   gate count them (suppressible via .appsec-galaxy-ignore by ID).
+- Reachability-aware CVE prioritization: Trivy dependency CVEs are joined to
+  the dependency code-path analysis (package-name normalizer handles npm
+  scopes, pypi case/extras/separator variants) and each finding gets
+  reachability (imported / not-imported / unknown) plus a combined
+  risk_priority: imported + KEV/high-EPSS escalates to urgent, declared but
+  never imported demotes one level (KEV never below high). The HTML report
+  sorts by risk_priority first and shows the reachability evidence; SARIF
+  carries reachability and risk_priority properties.
 - SARIF export is now first-class for GitHub Code Scanning: each rule carries
   `security-severity` (drives Security-tab ranking), each result carries
   `partialFingerprints` (dedups alerts across runs and tracks fix/reopen),

@@ -66,8 +66,13 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         detected_languages (set): Set of detected programming languages
     """
 
+    # Combined exploit-intel + reachability rank (trivy findings only carry
+    # these; everything else gets the neutral middle rank so severity decides)
+    _RISK_RANK = {'urgent': 0, 'high': 1, 'normal': 2, 'low': 3}
+
     def sort_by_severity(finding):
-        """Sort findings by severity priority: Critical > High > Error"""
+        """Sort by risk priority (reachable + exploited first, never-imported
+        last), then severity: Critical > High > Error"""
         severity = (finding.get('extra', {}).get('severity') or
                    finding.get('severity', '')).lower()
 
@@ -79,7 +84,8 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
             'high': 2,
             '': 6          # Unknown severity goes last
         }
-        return severity_order.get(severity, 6)
+        risk = finding.get('risk_priority') or finding.get('exploit_priority')
+        return (_RISK_RANK.get(risk, 2), severity_order.get(severity, 6))
 
     try:
         # Convert output_dir to Path object if it's a string

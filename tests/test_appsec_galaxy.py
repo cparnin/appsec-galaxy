@@ -3472,6 +3472,152 @@ class TestVulnIntel:
         assert fetch_epss_scores(['GHSA-xxxx', '', 'not-a-cve']) == {}
 
 
+class TestReachabilityPrioritization:
+    """Reachability joined into CVE priority (src/vuln_intel.py).
+
+    Exploit probability says how likely a CVE is to be attacked;
+    reachability says whether the vulnerable dep is even imported.
+    apply_reachability folds both into risk_priority."""
+
+    def _dep_report(self, deps):
+        """dict-shaped DependencyHealthReport (the to_dict() form)."""
+        return {'dependencies': deps}
+
+    def _usage(self, name, imported=True):
+        d = {'package_name': name, 'ecosystem': 'npm',
+             'import_sites': [], 'files_using': [], 'unique_apis_used': []}
+        if imported:
+            d['import_sites'] = [{'file': 'app.js', 'line': 1}]
+            d['files_using'] = ['app.js']
+            d['unique_apis_used'] = ['merge', 'get']
+        return d
+
+    # --- normalize_package_name -------------------------------------------
+
+    def test_normalize_npm_scoped(self):
+        from appsec_galaxy.vuln_intel import normalize_package_name
+        assert normalize_package_name('@babel/traverse') == '@babel/traverse'
+
+    def test_normalize_pypi_case_and_separators(self):
+        from appsec_galaxy.vuln_intel import normalize_package_name
+        assert normalize_package_name('PyYAML') == 'pyyaml'
+        assert normalize_package_name('python_dateutil') == 'python-dateutil'
+        assert normalize_package_name('zope.interface') == 'zope-interface'
+
+    def test_normalize_pypi_extras_stripped(self):
+        from appsec_galaxy.vuln_intel import normalize_package_name
+        assert normalize_package_name('requests[security]') == 'requests'
+
+    def test_normalize_empty(self):
+        from appsec_galaxy.vuln_intel import normalize_package_name
+        assert normalize_package_name('') == ''
+        assert normalize_package_name(None) == ''
+
+    # --- priority matrix ---------------------------------------------------
+
+    def test_imported_plus_high_epss_escalates_to_urgent(self):
+        from appsec_galaxy.vuln_intel import apply_reachability
+        f = {'tool': 'trivy', 'pkg_name': 'lodash', 'vulnerability_id': 'CVE-1',
+             'exploit_priority': 'high'}
+        apply_reachability([f], self._dep_report([self._usage('lodash')]))
+        assert f['reachability'] == 'imported'
+        assert f['risk_priority'] == 'urgent'
+        assert 'import site' in f['reachability_detail']
+
+    def test_not_imported_demotes_one_level(self):
+        from appsec_galaxy.vuln_intel import apply_reachability
+        findings = [
+            {'tool': 'trivy', 'pkg_name': 'leftpad', 'exploit_priority': 'urgent'},
+            {'tool': 'trivy', 'pkg_name': 'leftpad', 'exploit_priority': 'high'},
+            {'tool': 'trivy', 'pkg_name': 'leftpad', 'exploit_priority': 'normal'},
+        ]
+        apply_reachability(findings, self._dep_report([self._usage('leftpad', imported=False)]))
+        assert [f['risk_priority'] for f in findings] == ['high', 'normal', 'low']
+        assert findings[0]['reachability_detail'] == 'declared but never imported'
+
+    def test_kev_never_buried(self):
+        """A KEV CVE on an unimported dep demotes to high, never below."""
+        from appsec_galaxy.vuln_intel import apply_reachability
+        f = {'tool': 'trivy', 'pkg_name': 'x', 'exploit_priority': 'urgent'}
+        apply_reachability([f], self._dep_report([self._usage('x', imported=False)]))
+        assert f['risk_priority'] == 'high'
+
+    def test_unknown_package_keeps_priority(self):
+        from appsec_galaxy.vuln_intel import apply_reachability
+        f = {'tool': 'trivy', 'pkg_name': 'not-analyzed', 'exploit_priority': 'high'}
+        apply_reachability([f], self._dep_report([self._usage('other')]))
+        assert f['reachability'] == 'unknown'
+        assert f['risk_priority'] == 'high'
+
+    def test_join_across_name_conventions(self):
+        """Trivy PkgName PyYAML must join the analyzer's pyyaml entry."""
+        from appsec_galaxy.vuln_intel import apply_reachability
+        f = {'tool': 'trivy', 'pkg_name': 'PyYAML', 'exploit_priority': 'normal'}
+        apply_reachability([f], self._dep_report([self._usage('pyyaml')]))
+        assert f['reachability'] == 'imported'
+
+    # --- boundaries ----------------------------------------------------------
+
+    def test_misconfigs_and_non_trivy_untouched(self):
+        from appsec_galaxy.vuln_intel import apply_reachability
+        misconf = {'tool': 'trivy', 'finding_type': 'misconfiguration',
+                   'vulnerability_id': 'DS002'}
+        semgrep = {'tool': 'semgrep', 'check_id': 'sqli'}
+        apply_reachability([misconf, semgrep], self._dep_report([self._usage('lodash')]))
+        assert 'reachability' not in misconf
+        assert 'reachability' not in semgrep
+
+    def test_fails_open_without_report(self):
+        from appsec_galaxy.vuln_intel import apply_reachability
+        f = {'tool': 'trivy', 'pkg_name': 'lodash'}
+        assert apply_reachability([f], None) == [f]
+        assert 'reachability' not in f
+        apply_reachability([f], self._dep_report([]))
+        assert 'reachability' not in f
+
+    def test_accepts_dataclass_report(self):
+        from appsec_galaxy.dependency_analyzer import DependencyHealthReport, DependencyUsage
+        from appsec_galaxy.vuln_intel import apply_reachability
+        usage = DependencyUsage(package_name='lodash', ecosystem='npm')
+        usage.import_sites = [{'file': 'a.js', 'line': 1}]
+        report = DependencyHealthReport(repo_path='/r', dependencies=[usage])
+        f = {'tool': 'trivy', 'pkg_name': 'lodash', 'exploit_priority': 'normal'}
+        apply_reachability([f], report)
+        assert f['reachability'] == 'imported'
+
+    # --- surfacing -----------------------------------------------------------
+
+    def test_sarif_carries_reachability(self):
+        from appsec_galaxy.reporting.sarif import findings_to_sarif
+        f = {'tool': 'trivy', 'vulnerability_id': 'CVE-1', 'path': 'lock', 'line': 1,
+             'description': 'd', 'severity': 'high',
+             'reachability': 'not-imported', 'risk_priority': 'low'}
+        props = findings_to_sarif([f], '')['runs'][0]['results'][0]['properties']
+        assert props['reachability'] == 'not-imported'
+        assert props['risk_priority'] == 'low'
+
+    def test_html_shows_reachability_and_sorts_by_priority(self, tmp_path):
+        from appsec_galaxy.reporting.html import generate_html_report
+        findings = [
+            {'tool': 'trivy', 'vulnerability_id': 'CVE-LOW', 'path': 'lock', 'line': 1,
+             'description': 'unreachable dep', 'severity': 'critical', 'category': 'security',
+             'reachability': 'not-imported', 'risk_priority': 'low',
+             'reachability_detail': 'declared but never imported'},
+            {'tool': 'trivy', 'vulnerability_id': 'CVE-URGENT', 'path': 'lock', 'line': 1,
+             'description': 'reachable exploited dep', 'severity': 'high', 'category': 'security',
+             'reachability': 'imported', 'risk_priority': 'urgent',
+             'reachability_detail': '3 import site(s), 7 API(s) used'},
+        ]
+        out = tmp_path / 'out'
+        out.mkdir()
+        generate_html_report(findings, '', str(out), '/repo', {'javascript'})
+        html_out = (out / 'report.html').read_text()
+        assert 'declared but never imported' in html_out
+        assert 'Reachability:' in html_out
+        # urgent (reachable, high sev) renders before low (unreachable, critical sev)
+        assert html_out.index('reachable exploited dep') < html_out.index('unreachable dep')
+
+
 class TestScanHistory:
     """Trend history (src/scan_history.py)."""
 
