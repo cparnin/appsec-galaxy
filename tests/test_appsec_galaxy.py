@@ -2425,6 +2425,29 @@ class TestMCPServerTools:
         import appsec_galaxy_mcp_server
         return appsec_galaxy_mcp_server
 
+    def test_iter_trivy_findings_includes_misconfigs(self, mcp_module, sample_trivy_misconfig_output):
+        """MCP must surface Misconfigurations, not just Vulnerabilities."""
+        data = {
+            "Results": sample_trivy_misconfig_output["Results"] + [{
+                "Target": "package-lock.json",
+                "Vulnerabilities": [{
+                    "VulnerabilityID": "CVE-2021-23337", "PkgName": "lodash",
+                    "InstalledVersion": "4.17.19", "FixedVersion": "4.17.21",
+                    "Severity": "HIGH", "Title": "Command Injection",
+                }],
+            }],
+        }
+        findings = mcp_module._iter_trivy_findings(data)
+        assert len(findings) == 2
+        misconf = next(f for f in findings if f.get('finding_type') == 'misconfiguration')
+        assert misconf['vulnerability_id'] == 'DS002'
+        assert misconf['file_path'] == 'Dockerfile'
+        assert misconf['line_start'] == 1
+        assert misconf['severity'] == 'high'
+        assert misconf['remediation'].startswith("Add 'USER")
+        vuln = next(f for f in findings if 'finding_type' not in f)
+        assert vuln['package_name'] == 'lodash'
+
     def test_all_16_tools_registered(self, mcp_module):
         """The 16 tools the README advertises must be registered on FastMCP."""
         import asyncio
@@ -2779,6 +2802,28 @@ class TestFailOnCritical:
         )
         code, _ = self._run(tmp_path, script_path)
         assert code == 1
+
+    def test_trivy_critical_misconfig_fails(self, tmp_path, script_path):
+        """Trivy IaC misconfiguration with Severity=CRITICAL: fail."""
+        self._write_raw(
+            tmp_path,
+            trivy={'Results': [{'Target': 'Dockerfile',
+                                'Misconfigurations': [{'ID': 'DS002', 'Severity': 'CRITICAL'}]}]},
+        )
+        code, stdout = self._run(tmp_path, script_path)
+        assert code == 1
+        assert 'Trivy     : 1' in stdout
+
+    def test_suppressed_misconfig_passes(self, tmp_path, script_path):
+        """.appsec-galaxy-ignore suppression matches misconfig IDs too."""
+        (tmp_path / '.appsec-galaxy-ignore').write_text('trivy:DS002:*\n')
+        self._write_raw(
+            tmp_path,
+            trivy={'Results': [{'Target': 'Dockerfile',
+                                'Misconfigurations': [{'ID': 'DS002', 'Severity': 'CRITICAL'}]}]},
+        )
+        code, _ = self._run(tmp_path, script_path)
+        assert code == 0
 
     def test_gitleaks_any_leak_fails(self, tmp_path, script_path):
         """Any gitleaks finding is treated as critical: fail."""
@@ -3770,6 +3815,35 @@ class TestExecSummaryRedesign:
     def test_low_risk_when_clean(self, tmp_path):
         html_out = self._generate(tmp_path, [])
         assert 'risk-badge risk-low' in html_out
+
+    def test_misconfig_tile_only_when_present(self, tmp_path):
+        misconf = {'tool': 'trivy', 'vulnerability_id': 'DS002', 'path': 'Dockerfile', 'line': 1,
+                   'description': 'root user', 'severity': 'high',
+                   'finding_type': 'misconfiguration', 'category': 'security'}
+        html_with = self._generate(tmp_path, [misconf])
+        assert 'IaC Misconfigs' in html_with
+        html_without = self._generate_second(tmp_path, [
+            {'tool': 'semgrep', 'check_id': 'x', 'path': 'a.py', 'severity': 'high',
+             'start': {'line': 1}, 'extra': {'message': 'x'}, 'category': 'security'},
+        ])
+        assert 'IaC Misconfigs' not in html_without
+
+    def _generate_second(self, tmp_path, findings):
+        from appsec_galaxy.reporting.html import generate_html_report
+        out = tmp_path / 'out2'
+        out.mkdir()
+        generate_html_report(findings, "**Risk:** test", str(out), '/tmp/demo', {'python'})
+        return (out / 'report.html').read_text()
+
+    def test_deps_tile_excludes_misconfigs(self, tmp_path):
+        """A misconfig-only scan must show Dependencies 0, not 1."""
+        import re
+        misconf = {'tool': 'trivy', 'vulnerability_id': 'DS002', 'path': 'Dockerfile', 'line': 1,
+                   'description': 'root user', 'severity': 'high',
+                   'finding_type': 'misconfiguration', 'category': 'security'}
+        html_out = self._generate(tmp_path, [misconf])
+        deps_num = re.search(r'<div class="num">(\d+)</div>\s*<div class="label">Dependencies</div>', html_out)
+        assert deps_num and deps_num.group(1) == '0'
 
     def test_kev_tile_only_when_present(self, tmp_path):
         kev = {'tool': 'trivy', 'vulnerability_id': 'CVE-1', 'path': 'pom.xml', 'line': 1,

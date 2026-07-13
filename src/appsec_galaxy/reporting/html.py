@@ -377,7 +377,9 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
             'high': high_count,
             'sast': len([f for f in security if f.get('tool') == 'semgrep']),
             'secrets': len([f for f in security if f.get('tool') == 'gitleaks']),
-            'deps': len([f for f in security if f.get('tool') == 'trivy']),
+            'deps': len([f for f in security if f.get('tool') == 'trivy'
+                         and f.get('finding_type') != 'misconfiguration']),
+            'misconfigs': len([f for f in security if f.get('finding_type') == 'misconfiguration']),
             'code_quality': len([f for f in findings if f.get('category') == 'code_quality']),
             'kev': len([f for f in findings if f.get('in_kev')]),
         }

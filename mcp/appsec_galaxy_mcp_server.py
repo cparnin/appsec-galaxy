@@ -372,6 +372,41 @@ def _normalize_trivy(vuln: dict, idx: int, target: str = "package.json") -> dict
     }
 
 
+def _normalize_trivy_misconfig(misconf: dict, idx: int, target: str) -> dict:
+    severity = _TRIVY_SEVERITY_MAP.get(misconf.get('Severity', 'UNKNOWN'), 'medium')
+    cause = misconf.get('CauseMetadata') or {}
+    resolution = misconf.get('Resolution', '')
+    return {
+        "id": f"trivy-misconfig-{idx}",
+        "tool": "trivy",
+        "category": "security",
+        "finding_type": "misconfiguration",
+        "severity": severity,
+        "vulnerability_id": misconf.get('ID', 'Unknown'),
+        "title": f"{misconf.get('ID', 'Unknown')}: {misconf.get('Title', 'Misconfiguration')}",
+        "description": misconf.get('Description', ''),
+        "file_path": target,
+        "line_start": cause.get('StartLine', 0),
+        "line_end": cause.get('EndLine', 0),
+        "references": misconf.get('References', []) or [],
+        "fix_available": bool(resolution),
+        "remediation": resolution or "Review configuration"
+    }
+
+
+def _iter_trivy_findings(trivy_data: dict) -> list[dict]:
+    """Normalize every Trivy result: dependency CVEs (Vulnerabilities) and
+    IaC/config issues (Misconfigurations) share the raw trivy-sca.json."""
+    findings: list[dict] = []
+    for result in trivy_data.get('Results', []):
+        target = result.get('Target', 'package.json')
+        for vuln in result.get('Vulnerabilities', []):
+            findings.append(_normalize_trivy(vuln, len(findings), target))
+        for misconf in result.get('Misconfigurations', []):
+            findings.append(_normalize_trivy_misconfig(misconf, len(findings), target))
+    return findings
+
+
 def _normalize_eslint(file_path: str, msg: dict, idx: int) -> dict:
     severity = 'high' if msg.get('severity', 1) == 2 else 'medium'
     return {
@@ -772,11 +807,7 @@ def get_scan_findings(repo_path: str, page: int = 1, page_size: int = 10,
 
     trivy_data = core._load_json(os.path.join(raw_dir, "trivy-sca.json"))
     if trivy_data:
-        idx = 0
-        for result in trivy_data.get('Results', []):
-            for vuln in result.get('Vulnerabilities', []):
-                all_findings.append(_normalize_trivy(vuln, idx, result.get('Target', 'package.json')))
-                idx += 1
+        all_findings.extend(_iter_trivy_findings(trivy_data))
 
     all_findings.extend(_collect_code_quality_findings(core, resolved))
 
@@ -853,8 +884,9 @@ def get_semgrep_findings(repo_path: str, page: int = 1, page_size: int = 10,
 def get_trivy_findings(repo_path: str, page: int = 1, page_size: int = 10,
                        severity_filter: str | None = None,
                        fix_available: bool | None = None) -> str:
-    """Get paginated Trivy dependency vulnerability findings as structured
-    JSON: CVE details, affected packages, versions, and fix information."""
+    """Get paginated Trivy findings as structured JSON: dependency CVEs
+    (packages, versions, fix info) plus IaC/config misconfigurations
+    (finding_type "misconfiguration" with resolution guidance)."""
     core = _core()
     resolved = _resolve(repo_path)
     if core.is_scan_running(resolved):
@@ -863,11 +895,7 @@ def get_trivy_findings(repo_path: str, page: int = 1, page_size: int = 10,
     findings = []
     trivy_data = core._load_json(os.path.join(core.raw_dir(resolved), "trivy-sca.json"))
     if trivy_data:
-        idx = 0
-        for result in trivy_data.get('Results', []):
-            for vuln in result.get('Vulnerabilities', []):
-                findings.append(_normalize_trivy(vuln, idx, result.get('Target', 'package.json')))
-                idx += 1
+        findings = _iter_trivy_findings(trivy_data)
 
     if severity_filter:
         findings = [f for f in findings if f['severity'] == severity_filter.lower()]

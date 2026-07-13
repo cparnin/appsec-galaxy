@@ -12,7 +12,12 @@ semantic versioning.
   `APPSEC_TRIVY_SCANNERS` env var (default `vuln,misconfig`; set `vuln` for
   the old deps-only behavior). Misconfig findings normalize to the canonical
   Finding with file/line, resolution guidance, and are excluded from
-  dependency auto-fix.
+  dependency auto-fix. Misconfigs surface everywhere trivy results do: CLI
+  and web summaries get a dedicated misconfig count (dependency counts no
+  longer include them), the HTML report shows an IaC Misconfigs tile, MCP
+  get_scan_findings/get_trivy_findings return them (finding_type
+  "misconfiguration"), and the Action job summary plus fail-on-critical
+  gate count them (suppressible via .appsec-galaxy-ignore by ID).
 - SARIF export is now first-class for GitHub Code Scanning: each rule carries
   `security-severity` (drives Security-tab ranking), each result carries
   `partialFingerprints` (dedups alerts across runs and tracks fix/reopen),

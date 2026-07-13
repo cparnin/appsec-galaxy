@@ -561,7 +561,7 @@ async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], o
     if "trivy" in scanners_to_run or "all" in scanners_to_run:
         scanner_tasks.append({
             'name': 'trivy',
-            'display_name': 'Trivy (Dependencies)',
+            'display_name': 'Trivy (Deps + IaC Config)',
             'func': lambda sl=scan_level: run_trivy_scan(repo_path, output_dir / "raw", sl),
             'category': 'security'
         })
@@ -866,7 +866,8 @@ def run_auto_mode() -> list[dict[str, Any]]:
         if DEPENDENCY_ANALYSIS_AVAILABLE and ENABLE_DEPENDENCY_ANALYSIS:
             print("📦 Running dependency code-path analysis...")
             try:
-                trivy_findings = [f for f in enhanced_findings if f.get('tool') == 'trivy']
+                trivy_findings = [f for f in enhanced_findings if f.get('tool') == 'trivy'
+                                  and f.get('finding_type') != 'misconfiguration']
                 dep_health_report = run_dependency_analysis(str(repo_path), trivy_findings=trivy_findings)
                 if dep_health_report and dep_health_report.analyzed_dependencies > 0:
                     print(f"✅ Analyzed {dep_health_report.analyzed_dependencies} dependencies: {dep_health_report.strategy_breakdown}")
@@ -894,7 +895,10 @@ def run_auto_mode() -> list[dict[str, Any]]:
                     'high': len([f for f in security_findings if f.get('severity', '').lower() in ['high', 'error']]),
                     'sast': len([f for f in security_findings if f.get('tool') == 'semgrep']),
                     'secrets': len([f for f in security_findings if f.get('tool') == 'gitleaks']),
-                    'deps': len([f for f in security_findings if f.get('tool') == 'trivy'])
+                    'deps': len([f for f in security_findings if f.get('tool') == 'trivy'
+                                 and f.get('finding_type') != 'misconfiguration']),
+                    'misconfigs': len([f for f in security_findings
+                                       if f.get('finding_type') == 'misconfiguration'])
                 }
 
                 # Build security findings section
@@ -903,7 +907,8 @@ def run_auto_mode() -> list[dict[str, Any]]:
 • {summary_stats['high']} high-severity issues needing prompt remediation
 • {summary_stats['sast']} code security issues (SAST)
 • {summary_stats['secrets']} secrets detected in repository
-• {summary_stats['deps']} vulnerable dependencies identified"""
+• {summary_stats['deps']} vulnerable dependencies identified
+• {summary_stats['misconfigs']} IaC/config misconfigurations detected"""
 
                 # Add code quality section if present
                 code_quality_section = ""

@@ -105,21 +105,24 @@ def _semgrep_critical(raw_dir: Path) -> int:
 
 
 def _trivy_critical(raw_dir: Path) -> int:
-    """Count trivy CVEs at-or-above threshold.
+    """Count trivy CVEs and IaC misconfigurations at-or-above threshold.
 
     The scanner writes trivy-sca.json; plain trivy.json is checked as a
-    fallback for older artifacts."""
+    fallback for older artifacts. Misconfigurations use ID where CVEs use
+    VulnerabilityID; suppression matches either."""
     data = _load(raw_dir / "trivy-sca.json") or _load(raw_dir / "trivy.json")
     if not data:
         return 0
     n = 0
     for result in data.get("Results", []) or []:
-        for v in result.get("Vulnerabilities", []) or []:
+        entries = (result.get("Vulnerabilities", []) or []) + \
+                  (result.get("Misconfigurations", []) or [])
+        for v in entries:
             sev = (v.get("Severity") or "").lower()
             counts = (THRESHOLD == "critical" and sev == "critical") or \
                      (THRESHOLD == "high" and sev in ("critical", "high"))
             if counts and not _suppressed({"tool": "trivy",
-                                           "vulnerability_id": v.get("VulnerabilityID", ""),
+                                           "vulnerability_id": v.get("VulnerabilityID") or v.get("ID", ""),
                                            "path": result.get("Target", "")}):
                 n += 1
     return n

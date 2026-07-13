@@ -85,7 +85,7 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (424 tests, ~6s). Personal project of cparnin; MIT licensed.
+suite (429 tests, ~6s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 

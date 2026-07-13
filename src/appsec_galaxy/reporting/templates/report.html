@@ -346,6 +346,12 @@
           <div class="num">{{ exec_stats.deps }}</div>
           <div class="label">Dependencies</div>
         </div>
+        {% if exec_stats.misconfigs > 0 %}
+        <div class="exec-tile warn">
+          <div class="num">{{ exec_stats.misconfigs }}</div>
+          <div class="label">IaC Misconfigs</div>
+        </div>
+        {% endif %}
         <div class="exec-tile">
           <div class="num">{{ exec_stats.code_quality }}</div>
           <div class="label">Code Quality</div>

@@ -331,7 +331,10 @@ def scan_repository():
                     'high': len([f for f in security_findings if f.get('severity', '').lower() in ['high', 'error']]),
                     'sast': len([f for f in security_findings if f.get('tool') == 'semgrep']),
                     'secrets': len([f for f in security_findings if f.get('tool') == 'gitleaks']),
-                    'deps': len([f for f in security_findings if f.get('tool') == 'trivy'])
+                    'deps': len([f for f in security_findings if f.get('tool') == 'trivy'
+                                 and f.get('finding_type') != 'misconfiguration']),
+                    'misconfigs': len([f for f in security_findings
+                                       if f.get('finding_type') == 'misconfiguration'])
                 }
 
                 # Build security findings section
@@ -340,7 +343,8 @@ def scan_repository():
 • {summary_stats['high']} high-severity issues needing prompt remediation
 • {summary_stats['sast']} code security issues (SAST)
 • {summary_stats['secrets']} secrets detected in repository
-• {summary_stats['deps']} vulnerable dependencies identified"""
+• {summary_stats['deps']} vulnerable dependencies identified
+• {summary_stats['misconfigs']} IaC/config misconfigurations detected"""
 
                 # Add code quality section if present
                 code_quality_section = ""
@@ -369,7 +373,8 @@ def scan_repository():
                     from appsec_galaxy.dependency_analyzer import run_dependency_analysis
                     from appsec_galaxy.config import ENABLE_DEPENDENCY_ANALYSIS
                     if ENABLE_DEPENDENCY_ANALYSIS:
-                        trivy_web = [f for f in enhanced_findings if f.get('tool') == 'trivy']
+                        trivy_web = [f for f in enhanced_findings if f.get('tool') == 'trivy'
+                                     and f.get('finding_type') != 'misconfiguration']
                         dep_health_data_web = run_dependency_analysis(str(validated_path), trivy_findings=trivy_web)
                         if dep_health_data_web and dep_health_data_web.analyzed_dependencies > 0:
                             print(f"📦 Analyzed {dep_health_data_web.analyzed_dependencies} dependencies")

@@ -56,7 +56,7 @@ with:
 
 **Frameworks**: Express, Spring, Django, Rails, Laravel, ASP.NET, React, Vue, Angular
 
-**Scanners**: Semgrep (SAST security analysis only), Gitleaks (secrets), Trivy (dependencies)
+**Scanners**: Semgrep (SAST security analysis only), Gitleaks (secrets), Trivy (dependencies + IaC/config misconfigurations)
 
 **Code Quality**: Always reported regardless of scan level - continuous value from every scan
 

@@ -192,7 +192,8 @@ runs:
         fi
 
         if [ -f "$trivy_file" ]; then
-          trivy_count=$(jq '[.Results[]? | .Vulnerabilities[]? | (.Severity // "") | ascii_downcase | select(. == "critical" or . == "high")] | length' "$trivy_file" 2>/dev/null || echo "0")
+          # Counts dependency CVEs and IaC misconfigurations (both live in Results[])
+          trivy_count=$(jq '[.Results[]? | (.Vulnerabilities[]?, .Misconfigurations[]?) | (.Severity // "") | ascii_downcase | select(. == "critical" or . == "high")] | length' "$trivy_file" 2>/dev/null || echo "0")
         else
           trivy_count=0
         fi
