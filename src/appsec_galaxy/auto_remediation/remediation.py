@@ -164,6 +164,36 @@ def sanitize_git_message(message: str) -> str:
 
     return sanitized.strip()
 
+def sanitize_markdown_field(text: Any, max_len: int = 200) -> str:
+    """Neutralize untrusted text for interpolation into a PR body.
+
+    PR titles go through sanitize_git_message (which flattens newlines), but
+    PR *bodies* are multi-line Markdown rendered on GitHub, and the finding
+    text, file paths, package names, and AI summaries interpolated into them
+    all originate from the scanned repo (hostile input). Without neutralizing,
+    an attacker can inject Markdown links/images (tracking pixels, phishing),
+    @mentions (notification spam), raw HTML, or code-fence breakouts, or fake
+    instructions aimed at a reviewer or a downstream LLM reading the PR.
+
+    This keeps the text readable but defuses the active Markdown/HTML
+    constructs: it is meant for a single inline field, so newlines collapse
+    to spaces.
+    """
+    s = str(text) if text is not None else ""
+    s = s.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')
+    if len(s) > max_len:
+        s = s[:max_len] + '...'
+    s = s.replace('\\', ' ')  # drop backslash escapes
+    # Strip link-text/HTML/code-fence/table-cell forming characters
+    for ch in ('`', '[', ']', '<', '>', '|'):
+        s = s.replace(ch, ' ')
+    # Defang autolinked URLs and @mentions so they render as inert text.
+    # The replacement must not reintroduce Markdown-active characters.
+    s = re.sub(r'(?i)\b(https?|ftp|file|data)://', r'\1 (scheme) ', s)
+    s = re.sub(r'(?<![\w/])@(\w)', r'@ \1', s)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
 def validate_vulnerability_type(vuln_type: str) -> bool:
     """
     Validate vulnerability type string to prevent injection.
@@ -845,11 +875,12 @@ Provide the corrected code for line {line_number}.
             "## What This PR Fixes",
         ]
 
-        # List the specific fixes applied
+        # List the specific fixes applied (fields come from the scanned repo:
+        # sanitize before interpolating into Markdown, see sanitize_markdown_field)
         for fix in fixes:
-            vuln_type = fix.get('vulnerability_type', 'Security issue')
-            file_path = fix.get('file_path', 'unknown file')
-            line_num = fix.get('line_number', '?')
+            vuln_type = sanitize_markdown_field(fix.get('vulnerability_type', 'Security issue'), 80)
+            file_path = sanitize_markdown_field(fix.get('file_path', 'unknown file'), 200)
+            line_num = sanitize_markdown_field(fix.get('line_number', '?'), 12)
             pr_lines.append(f"* **{vuln_type}** in `{file_path}:{line_num}`")
 
         pr_lines.extend([
@@ -898,14 +929,17 @@ Provide the corrected code for line {line_number}.
                     line = finding.get('start', {}).get('line', '?')
 
                 severity = finding.get('severity', 'unknown')
-                severity_label = severity.upper() if severity != 'unknown' else 'UNKNOWN'
+                severity_label = sanitize_markdown_field(severity, 20).upper() if severity != 'unknown' else 'UNKNOWN'
 
                 # Add cross-file analysis if available
                 cross_file_info = ""
                 if finding.get('cross_file_summary'):
-                    cross_file_info = f" | {finding['cross_file_summary']}"
+                    cross_file_info = f" | {sanitize_markdown_field(finding['cross_file_summary'], 200)}"
 
-                pr_lines.append(f"**[{severity_label}]** {message[:100]}{'...' if len(message) > 100 else ''} in `{file_path}:{line}`{cross_file_info}")
+                safe_message = sanitize_markdown_field(message, 100)
+                safe_path = sanitize_markdown_field(file_path, 200)
+                safe_line = sanitize_markdown_field(line, 12)
+                pr_lines.append(f"**[{severity_label}]** {safe_message} in `{safe_path}:{safe_line}`{cross_file_info}")
 
             if len(remaining_findings) > 3:
                 pr_lines.append(f"... and {len(remaining_findings) - 3} more findings")
@@ -991,14 +1025,19 @@ Provide the corrected code for line {line_number}.
                     if any(fw in factor.lower() for fw in ['framework', 'express', 'flask', 'django', 'spring', 'react', 'vue']):
                         frameworks_found.add(factor)
 
-            # Extract business impact
+            # Extract business impact (path is untrusted: sanitize for Markdown)
             if finding.get('business_impact', {}).get('financial_risk') == 'High':
-                business_impacts.append(f"High financial risk in {finding.get('path', 'unknown file')}")
+                safe_path = sanitize_markdown_field(finding.get('path', 'unknown file'), 200)
+                business_impacts.append(f"High financial risk in {safe_path}")
 
-            # Extract cross-file analysis
+            # Extract cross-file analysis. chain_type/severity/description are
+            # AI-derived from hostile code: sanitize each before Markdown.
             if finding.get('cross_file_analysis', {}).get('potential_attack_chains'):
                 for chain in finding['cross_file_analysis']['potential_attack_chains']:
-                    cross_file_chains.append(f"**{chain['chain_type']}** ({chain['severity']}): {chain['description']}")
+                    ctype = sanitize_markdown_field(chain.get('chain_type', ''), 80)
+                    csev = sanitize_markdown_field(chain.get('severity', ''), 20)
+                    cdesc = sanitize_markdown_field(chain.get('description', ''), 200)
+                    cross_file_chains.append(f"**{ctype}** ({csev}): {cdesc}")
 
         # Build analysis sections
         analysis_parts = ["**🧠 Cross-File Security Intelligence:**"]
@@ -1869,11 +1908,13 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
                 "## Package Updates",
             ]
 
+            # Package names, versions, and CVE ids come from the scanned
+            # repo's manifests and Trivy output: sanitize before Markdown.
             for fix in fixes:
-                pkg = fix['package_name']
-                old_ver = fix['old_version']
-                new_ver = fix['new_version']
-                vuln_id = fix.get('vulnerability_id', '')
+                pkg = sanitize_markdown_field(fix['package_name'], 120)
+                old_ver = sanitize_markdown_field(fix['old_version'], 40)
+                new_ver = sanitize_markdown_field(fix['new_version'], 40)
+                vuln_id = sanitize_markdown_field(fix.get('vulnerability_id', ''), 40)
                 pr_lines.append(f"* **{pkg}**: `{old_ver}` → `{new_ver}` (fixes {vuln_id})")
 
             # Add dependency health context if available

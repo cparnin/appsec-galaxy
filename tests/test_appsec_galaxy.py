@@ -1196,6 +1196,73 @@ class TestUntrustedPRContext:
         assert result is not None
 
 
+class TestPRBodyMarkdownSanitization:
+    """PR bodies interpolate finding text, file paths, package names, and
+    AI summaries from the scanned repo. sanitize_markdown_field must defuse
+    Markdown/HTML injection (src/auto_remediation/remediation.py)."""
+
+    def _s(self):
+        from appsec_galaxy.auto_remediation.remediation import sanitize_markdown_field
+        return sanitize_markdown_field
+
+    def test_link_and_image_syntax_neutralized(self):
+        s = self._s()
+        out = s('click ![img](http://evil.com/x.png)[a](http://evil.com)')
+        assert '](' not in out
+        assert '[' not in out and ']' not in out
+        assert 'http://' not in out  # scheme defanged
+
+    def test_autolinked_url_defanged(self):
+        s = self._s()
+        out = s('see http://evil.example/steal?c=1')
+        assert 'http://' not in out
+        assert 'evil.example' in out  # still readable, just not a live link
+
+    def test_mention_defanged(self):
+        s = self._s()
+        assert '@ evilorg' in s('ping @evilorg now') or '@evilorg' not in s('ping @evilorg now')
+
+    def test_html_and_code_fence_stripped(self):
+        s = self._s()
+        out = s('<img src=x onerror=alert(1)> ```js\\nbad```')
+        assert '<' not in out and '>' not in out
+        assert '`' not in out
+
+    def test_newlines_and_length_capped(self):
+        s = self._s()
+        out = s('a\nb\rc\td', max_len=200)
+        assert '\n' not in out and '\r' not in out
+        long = s('x' * 500, max_len=50)
+        assert len(long) <= 53 and long.endswith('...')
+
+    def test_benign_path_readable(self):
+        s = self._s()
+        assert s('src/app/db.py') == 'src/app/db.py'
+
+    def test_none_and_nonstring(self):
+        s = self._s()
+        assert s(None) == ''
+        assert s(42) == '42'
+
+    def test_pr_body_end_to_end_neutralizes_hostile_finding(self):
+        """A hostile filename/message must not survive into the PR body as a
+        live link."""
+        from appsec_galaxy.auto_remediation.remediation import AutoRemediator
+        r = AutoRemediator.__new__(AutoRemediator)
+        r.model = 'test-model'
+        findings = [{
+            'tool': 'semgrep',
+            'severity': 'high',
+            'path': 'evil](http://evil.com).py',
+            'start': {'line': 1},
+            'extra': {'message': 'pwned [click](http://evil.com/steal) @maintainer'},
+        }]
+        body = r._generate_improved_pr_body(findings, [], 'fix-branch')
+        assert '](http://evil.com' not in body
+        assert '[click](' not in body
+        assert 'http://evil.com' not in body
+
+
 class TestRemediationSandboxing:
     """Auto-remediation must never execute untrusted repo code when
     regenerating lockfiles (src/auto_remediation/remediation.py).

@@ -7,6 +7,13 @@ semantic versioning.
 
 ### Security
 
+- PR body text is sanitized against Markdown injection. Auto-remediation PR
+  bodies interpolate finding messages, file paths, package names, and
+  AI-derived attack-chain descriptions, all originating from the scanned
+  repo. New `sanitize_markdown_field` defuses links/images (tracking pixels,
+  phishing), `@mentions` (notification spam), raw HTML, and code-fence
+  breakouts before they reach `gh pr create --body`. PR titles were already
+  sanitized; this closes the body.
 - Web server defaults fail closed. The dev server now binds `127.0.0.1` by
   default instead of `0.0.0.0` (exposing it on all interfaces is now a
   deliberate `HOST=0.0.0.0` opt-in), and CORS no longer falls back to a
