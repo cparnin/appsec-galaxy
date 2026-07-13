@@ -85,13 +85,21 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         # Convert output_dir to Path object if it's a string
         output_path = Path(output_dir)
 
-        # Group findings by tool
-        results: dict[str, list[dict[str, Any]]] = {}
+        # Group findings by tool. Order matters: the report renders per-tool
+        # sections in this dict's order, and we want the AI findings (the
+        # differentiated, high-signal results) at the top of the detailed
+        # findings rather than buried below hundreds of dependency rows.
+        _TOOL_ORDER = {'ai_scan': 0, 'semgrep': 1, 'gitleaks': 2, 'trivy': 3}
+        grouped: dict[str, list[dict[str, Any]]] = {}
         for finding in findings:
             tool = finding.get('tool', 'unknown')
-            if tool not in results:
-                results[tool] = []
-            results[tool].append(finding)
+            if tool not in grouped:
+                grouped[tool] = []
+            grouped[tool].append(finding)
+        results: dict[str, list[dict[str, Any]]] = {
+            tool: grouped[tool]
+            for tool in sorted(grouped, key=lambda t: (_TOOL_ORDER.get(t, 99), t))
+        }
 
         # Load Jinja2 template.
         # autoescape on: AppSec Galaxy scans hostile code, so findings carry strings

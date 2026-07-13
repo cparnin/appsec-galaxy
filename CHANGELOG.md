@@ -5,6 +5,12 @@ semantic versioning.
 
 ## Unreleased
 
+### Changed
+
+- HTML report is now dark-themed by default (was light) and front-loads the
+  AI findings: the AI Deep Analysis section leads the detailed findings
+  instead of rendering last.
+
 ### Fixed
 
 - Raised per-depth AI output-token caps (8K/16K/32K) and added explicit
