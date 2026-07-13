@@ -80,6 +80,7 @@ def run_semgrep(repo_path: str, output_dir: str | None = None, scan_level: str |
 
         cmd.extend([
             "--config", "auto",  # Security rules
+            "--metrics=off",  # No scan telemetry to the Semgrep registry (private/client code)
             "--json",
             "--output", str(output_file)
         ])

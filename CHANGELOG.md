@@ -18,6 +18,12 @@ semantic versioning.
   `partialFingerprints` (dedups alerts across runs and tracks fix/reopen),
   and rules link `helpUri` when the source tool provides a reference.
 
+### Changed
+
+- Semgrep now runs with `--metrics=off`: `--config auto` sent scan telemetry
+  to the Semgrep registry by default, which a tool scanning private or client
+  code should not do.
+
 ### Fixed
 
 - Auto-remediation no longer commits broken code. Every applied single-line

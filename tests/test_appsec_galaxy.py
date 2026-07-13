@@ -417,6 +417,25 @@ class TestSemgrep:
         results = run_semgrep('/invalid/path')
         assert results == []
 
+    @patch('appsec_galaxy.scanners.semgrep.subprocess.run')
+    @patch('appsec_galaxy.scanners.semgrep.validate_repo_path')
+    def test_command_disables_metrics(
+        self, mock_validate_repo, mock_subprocess, mock_repo, output_dir
+    ):
+        """--config auto phones scan telemetry home unless --metrics=off;
+        a tool scanning private/client code must not send it."""
+        mock_validate_repo.return_value = mock_repo
+
+        result = Mock()
+        result.returncode = 0
+        result.stdout = ""
+        result.stderr = ""
+        mock_subprocess.return_value = result
+
+        run_semgrep(str(mock_repo), str(output_dir))
+        cmd = mock_subprocess.call_args_list[0][0][0]
+        assert "--metrics=off" in cmd
+
 
 # ============================================================================
 # TRIVY SCANNER TESTS

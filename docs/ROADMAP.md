@@ -73,7 +73,7 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
 - **Why:** you already emit SARIF; without these fields it renders as
   second-class and re-alerts every run.
 
-### 1c. Semgrep `--metrics off` (privacy + reproducibility)
+### 1c. Semgrep `--metrics off` (privacy + reproducibility) [DONE 2026-07-13]
 - **Where:** `src/appsec_galaxy/scanners/semgrep.py`, the `cmd.extend([...])`
   around L82.
 - **Change:** add `"--metrics=off"`. `--config auto` currently sends scan
