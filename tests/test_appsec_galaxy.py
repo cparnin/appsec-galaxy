@@ -34,7 +34,7 @@ def test_distribution_namespace_imports():
     import appsec_galaxy
 
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.4.1"
+    assert appsec_galaxy.__version__ == "2.4.2"
 
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
@@ -3295,6 +3295,33 @@ class TestAutoModeScannerSelection:
         monkeypatch.setenv('APPSEC_AI_SCAN', 'yes')  # Truthy in some langs, not for us
         scanners = _build_auto_mode_scanner_list()
         assert "ai_scan" not in scanners
+
+
+class TestAutoModeZeroFindings:
+    """Regression: a clean scan (zero findings) in CI must not crash.
+
+    run_auto_mode returns enhanced_findings, but that name was only bound
+    inside the has-findings branch, so a scan that found nothing raised
+    UnboundLocalError and failed the job (the self-scan broke the moment
+    the repo scanned clean)."""
+
+    def test_zero_findings_returns_empty_without_crash(self, tmp_path, monkeypatch):
+        if 'appsec_galaxy.main' in sys.modules:
+            del sys.modules['appsec_galaxy.main']
+        from appsec_galaxy import main as m
+        (tmp_path / '.git').mkdir()
+        out = tmp_path / 'out'
+        (out / 'raw').mkdir(parents=True)
+        monkeypatch.setattr(m, 'is_github_actions', lambda: True)
+        monkeypatch.setattr(m, 'validate_repo_path', lambda p: tmp_path)
+        monkeypatch.setattr(m, 'get_output_path', lambda *a, **k: str(out))
+        monkeypatch.setattr(m, 'cleanup_old_scans', lambda *a, **k: None)
+        monkeypatch.setattr(m, 'setup_output_directories', lambda *a, **k: {'base': out})
+        monkeypatch.setattr(m, 'run_security_scans', lambda *a, **k: [])  # clean scan
+        monkeypatch.setattr(m, 'SBOM_AVAILABLE', False)
+        monkeypatch.setenv('GITHUB_WORKSPACE', str(tmp_path))
+        result = m.run_auto_mode()
+        assert result == []
 
 
 class TestAppSecGalaxySettings:

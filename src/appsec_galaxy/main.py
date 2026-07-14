@@ -878,12 +878,15 @@ def run_auto_mode() -> list[dict[str, Any]]:
     # Run scanners in parallel
     all_findings = run_security_scans(str(repo_path), scanners_to_run, output_dir, scan_level)
 
+    # Bind before the branch: the no-findings path still returns this, so a
+    # clean scan (zero findings) must not raise UnboundLocalError.
+    enhanced_findings: list[dict[str, Any]] = all_findings
+
     # Generate reports with cross-file enhancement (same as interactive mode)
     if all_findings:
         print(f"\n📊 Found {len(all_findings)} security findings")
 
         # Enhance findings with cross-file analysis (same as interactive mode)
-        enhanced_findings = all_findings
         context_summary = ""
 
         if CROSS_FILE_AVAILABLE and all_findings:

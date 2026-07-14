@@ -5,6 +5,17 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.4.2] - 2026-07-13
+
+### Fixed
+
+- Auto mode (GitHub Action / `python -m appsec_galaxy.main`) crashed with
+  `UnboundLocalError: enhanced_findings` when a scan found zero findings:
+  the variable was bound only in the has-findings branch but returned
+  unconditionally. A clean repo scanned in CI (including the self-scan once
+  the tree scanned clean) failed the job. Now bound before the branch.
+  Regression test added.
+
 ## [2.4.1] - 2026-07-13
 
 ### Changed
