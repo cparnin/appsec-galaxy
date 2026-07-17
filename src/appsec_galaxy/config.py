@@ -110,7 +110,12 @@ class AppSecGalaxySettings(BaseSettings):
 
     # AI-native scanner (opt-in). Depth selects quick, standard, or deep.
     # Tier is client privacy:
-    # 1=no AI, 2=snippets only, 3=full source.
+    # 1 = no AI calls at all
+    # 2 = metadata only (AI exec summary runs on finding paths/lines/rules/
+    #     messages; no source files, no AI scanner, no AI cross-file)
+    # 3 = full source files sent to the AI scanner (default)
+    # Gates are split across scanners/ai_scanner.py and ai_cross_file.py
+    # (`tier < 3`) and reporting/ai_summary.py (`tier < 2`).
     ai_scan: bool = Field(default=False, alias="APPSEC_AI_SCAN")
     ai_scan_depth: str = Field(default="standard", alias="APPSEC_AI_SCAN_DEPTH")
     ai_scan_max_files: int = Field(default=50, ge=1, alias="APPSEC_AI_SCAN_MAX_FILES")

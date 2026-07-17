@@ -14,10 +14,16 @@ Three scan depths:
 - standard (GPT-5.6 Terra): balanced cross-file cluster analysis
 - deep (GPT-5.6 Sol): capability-first multi-pass analysis
 
-Client data privacy tiers:
-- Tier 1: No code sent to AI (AI scanner disabled)
-- Tier 2: Only vulnerability snippets sent
-- Tier 3: Full source files sent for deep analysis (this scanner)
+Client data privacy tiers (APPSEC_AI_SCAN_TIER). The gates live in three
+different modules with two different thresholds, so the full picture is:
+
+- Tier 1: No AI calls at all. Every gate is closed.
+- Tier 2: Metadata only. This scanner and ai_cross_file are skipped
+          (`tier < 3`), but reporting/ai_summary still runs (it gates on
+          `tier < 2`) and sends a findings digest: file paths, line
+          numbers, rule IDs, and scanner messages. No source files.
+          Detected secret values are excluded from that digest.
+- Tier 3: Full source files sent for deep analysis (default).
 """
 
 import json

@@ -103,6 +103,26 @@ The default scan-depth mapping per provider is:
 fallback override. Static findings and reports remain available if optional AI
 enrichment fails.
 
+### What data reaches the AI provider
+
+AI is off by default (`APPSEC_AI_SCAN=false`). Once enabled,
+`APPSEC_AI_SCAN_TIER` controls exposure:
+
+| Tier | What leaves your machine |
+| --- | --- |
+| `1` | Nothing. Every AI call is gated off. |
+| `2` | Finding metadata only: file paths, line numbers, rule IDs, and scanner messages for the top 15 findings, used to write the executive summary. No source files. |
+| `3` (default) | Source files (capped by `APPSEC_AI_SCAN_MAX_FILES`, default 50) plus the above. |
+
+Detected secret values are excluded from AI prompts at every tier; Gitleaks
+findings are summarized by type only. Set the tier in `.env`; there is no CLI
+or web control for it.
+
+Semgrep, Gitleaks, and Trivy analyze code locally. Some enrichment still makes
+outbound calls with non-source data: EPSS/CISA-KEV lookups send CVE IDs
+(`APPSEC_VULN_INTEL=false` to disable), dependency health sends package names
+(`APPSEC_DEP_HEALTH_CHECK=false`), and Semgrep fetches rules via `--config auto`.
+
 ## Outputs
 
 Each scanned repository receives one current output directory:
