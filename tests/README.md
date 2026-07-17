@@ -21,8 +21,8 @@ every SDK/model boundary, so CI never makes a live model request.
 ## Focused suites
 
 ```bash
-.venv/bin/python -m pytest tests/test_openai_provider.py -q
-.venv/bin/python -m pytest tests/test_openai_consumers.py -q
+.venv/bin/python -m pytest tests/test_ai_provider.py -q
+.venv/bin/python -m pytest tests/test_ai_consumers.py -q
 .venv/bin/python -m pytest tests/test_appsec_galaxy.py -k MCP -q
 .venv/bin/python -m pytest tests/test_appsec_galaxy.py -k AppSecGalaxyIgnore -q
 ```

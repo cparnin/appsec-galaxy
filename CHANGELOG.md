@@ -5,6 +5,15 @@ semantic versioning.
 
 ## Unreleased
 
+### Added
+
+- `TestPrivacyTierContract`: pins the composite privacy-tier behavior across
+  the split gates (`tier < 3` in ai_scanner and ai_cross_file, `tier < 2` in
+  ai_summary) so the README privacy table and the code cannot drift apart.
+  Includes sentinel tests that no AI client is ever constructed at tiers 1-2
+  in the source-sending paths, and that secret values never enter the
+  findings digest. Tests only, no behavior change.
+
 ## [2.4.2] - 2026-07-13
 
 ### Fixed

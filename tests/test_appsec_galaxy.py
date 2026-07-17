@@ -1992,7 +1992,7 @@ class TestAICrossFileOrchestrator:
         assert result['enhanced_findings'] == findings
 
     def test_low_privacy_tier_skips_ai(self, monkeypatch):
-        """Tier 2 (snippets only) and tier 1 (no AI) must skip cross-file LLM."""
+        """Tier 2 (metadata only) and tier 1 (no AI) must skip cross-file LLM."""
         from appsec_galaxy.ai_cross_file import run_ai_cross_file_analysis
         monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
         monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '2')
@@ -2521,6 +2521,133 @@ class TestBuildFindingsDigest:
         assert '...' in digest
         # Should be truncated to ~200 chars + ellipsis
         assert 'A' * 201 not in digest
+
+
+class TestPrivacyTierContract:
+    """Pins the composite promise made about each APPSEC_AI_SCAN_TIER value.
+
+    The tier gates live in three modules with two different thresholds:
+    `tier < 3` in scanners/ai_scanner.py and ai_cross_file.py, `tier < 2`
+    in reporting/ai_summary.py. Reading any one file makes tier 2 look
+    identical to tier 1, and that split already produced wrong docs once
+    (corrected alongside the README privacy table). These tests assert the
+    composite behavior so the README table and the code cannot drift apart
+    again.
+    """
+
+    def _summary_kwargs(self):
+        return {
+            'findings': [{
+                'tool': 'semgrep', 'severity': 'critical', 'check_id': 'sqli',
+                'path': 'app.py', 'start': {'line': 4},
+                'extra': {'message': 'SQL injection', 'metadata': {}},
+            }],
+            'repo_path': '/tmp/repo',
+            'static_summary': 'STATIC',
+        }
+
+    def test_tier_1_makes_zero_ai_calls(self, monkeypatch, tmp_path):
+        """Tier 1 is the 'nothing leaves your machine' promise: all gates shut."""
+        from appsec_galaxy import ai_cross_file
+        from appsec_galaxy.reporting import ai_summary
+        from appsec_galaxy.scanners import ai_scanner
+
+        monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '1')
+
+        # Any client construction blows up on a sentinel instead of silently passing.
+        monkeypatch.setattr(ai_scanner, '_get_ai_client',
+                            lambda: pytest.fail('tier 1 must not build an AI client (ai_scanner)'))
+        monkeypatch.setattr(ai_cross_file, '_get_ai_client_and_model',
+                            lambda: pytest.fail('tier 1 must not build an AI client (ai_cross_file)'))
+        monkeypatch.setattr(ai_summary, '_get_ai_client_and_model',
+                            lambda: pytest.fail('tier 1 must not build an AI client (ai_summary)'))
+
+        assert ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path)) == []
+
+        chains = [{'entry_point': 'a.py', 'sink': 'b.py'}]
+        result = ai_cross_file.run_ai_cross_file_analysis([], chains, str(tmp_path))
+        assert result['ai_enhanced'] is False
+        assert result['validated_chains'] == chains
+
+        assert ai_summary.generate_ai_executive_summary(**self._summary_kwargs()) == 'STATIC'
+
+    def test_tier_2_sends_no_source(self, monkeypatch, tmp_path):
+        """Tier 2 shuts both source-sending gates (the `tier < 3` pair)."""
+        from appsec_galaxy import ai_cross_file
+        from appsec_galaxy.scanners import ai_scanner
+
+        monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '2')
+
+        monkeypatch.setattr(ai_scanner, '_get_ai_client',
+                            lambda: pytest.fail('tier 2 must not build an AI client (ai_scanner)'))
+        monkeypatch.setattr(ai_cross_file, '_get_ai_client_and_model',
+                            lambda: pytest.fail('tier 2 must not build an AI client (ai_cross_file)'))
+
+        assert ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path)) == []
+        result = ai_cross_file.run_ai_cross_file_analysis([], [], str(tmp_path))
+        assert result['ai_enhanced'] is False
+
+    def test_tier_2_still_runs_the_exec_summary(self, monkeypatch):
+        """Tier 2 is NOT 'no AI'. The exec summary gates on `tier < 2`, so it runs.
+
+        This is the behavior that makes tier 2 a real middle ground:
+        finding metadata goes to the AI, source files do not. If someone
+        changes ai_summary to gate on `tier < 3`, tier 2 becomes identical
+        to tier 1 and the README privacy table becomes a lie. Fail loudly.
+        """
+        from appsec_galaxy.reporting import ai_summary
+
+        monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '2')
+
+        called = {'n': 0}
+
+        def fake_call(client, model, sys_prompt, user_msg):
+            called['n'] += 1
+            return 'AI summary text that is comfortably long enough to pass the length check.'
+
+        monkeypatch.setattr(ai_summary, '_get_ai_client_and_model', lambda: ('c', 'm'))
+        monkeypatch.setattr(ai_summary, '_call_ai', fake_call)
+
+        result = ai_summary.generate_ai_executive_summary(**self._summary_kwargs())
+        assert called['n'] == 1, 'tier 2 must still call the AI for the exec summary'
+        assert result != 'STATIC'
+
+    def test_tier_2_digest_carries_metadata_but_no_source(self):
+        """Document what tier 2 actually ships: paths and messages, not file bodies."""
+        from appsec_galaxy.reporting.ai_summary import _build_findings_digest
+
+        digest = _build_findings_digest([{
+            'tool': 'semgrep', 'severity': 'critical', 'check_id': 'sqli',
+            'path': 'routes/login.py', 'start': {'line': 42},
+            'extra': {'message': 'SQL injection via req.body', 'metadata': {}},
+        }])
+
+        # Metadata a client should expect to leave at tier 2:
+        assert 'routes/login.py' in digest
+        assert '42' in digest
+        assert 'sqli' in digest
+        assert 'SQL injection via req.body' in digest
+
+    def test_digest_never_carries_secret_values(self):
+        """README: 'Detected secret values are excluded from AI prompts at
+        every tier'. Gitleaks payloads keep the raw Secret/Match keys, so the
+        digest must summarize by rule description and never dump the payload.
+        """
+        from appsec_galaxy.reporting.ai_summary import _build_findings_digest
+
+        placeholder = 'fake-secret-value-must-never-leave-machine'
+        digest = _build_findings_digest([{
+            # Realistic shape: Finding.from_gitleaks preserves raw capitalized keys.
+            'tool': 'gitleaks', 'category': 'security',
+            'Description': 'AWS Access Key', 'RuleID': 'aws-access-key',
+            'File': '.env', 'StartLine': 3,
+            'Secret': placeholder, 'Match': placeholder,
+        }])
+
+        assert placeholder not in digest
 
 
 # ---------------------------------------------------------------------------
