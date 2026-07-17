@@ -118,7 +118,7 @@ def findings_to_sarif(findings: list[dict[str, Any]], repo_path: str = "") -> di
                 }
             }],
             "partialFingerprints": {
-                "primaryLocationLineHash": _fingerprint(rule_id, uri, f),
+                "appsecGalaxy/v1": _fingerprint(rule_id, uri, f),
             },
             "properties": {"tool": tool, "severity": severity},
         }

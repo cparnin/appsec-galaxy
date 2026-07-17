@@ -5,6 +5,23 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.6.2] - 2026-07-17
+
+### Fixed
+
+- SARIF `partialFingerprints` now uses a tool-namespaced key
+  (`appsecGalaxy/v1`) instead of `primaryLocationLineHash`, which GitHub
+  computes itself with different semantics; every upload warned about
+  inconsistent fingerprints and alert dedup could churn.
+- Self-scan Security-tab noise: the CI history scan (fetch-depth 0)
+  surfaced fake demo-app secrets inside raw scan outputs committed before
+  `outputs/` was gitignored, plus test fixtures at historical commits.
+  Suppressed with commit-anchored fingerprints in `.gitleaksignore` (git
+  mode ignores the dir-mode entries) and `tests/*` / `outputs/*` baseline
+  globs. A remediation doc example in `enhanced_analyzer.py` now uses the
+  allowlisted `your-api-key-here` placeholder instead of tripping the
+  generic-secret rule.
+
 ## [2.6.1] - 2026-07-17
 
 ### Fixed

@@ -15,3 +15,67 @@ tests/test_ai_provider.py:generic-secret:193
 tests/test_ai_consumers.py:generic-secret:370
 tests/test_ai_consumers.py:generic-secret:464
 tests/test_ai_consumers.py:generic-secret:465
+
+# Git-history fingerprints (commit:file:rule:line) for the same fixtures:
+# CI scans full history (fetch-depth 0), where gitleaks uses commit-anchored
+# fingerprints, so the dir-mode entries above do not apply. Includes raw scan
+# outputs of the nodejs-goof demo app committed before outputs/ was gitignored
+# (fake demo secrets; published history is never rewritten), plus fixture
+# lines at historical commits.
+4814e841f14c1ba97246157b7a18c066e956edcf:tests/test_ai_consumers.py:generic-secret:386
+4814e841f14c1ba97246157b7a18c066e956edcf:tests/test_ai_consumers.py:generic-secret:480
+4814e841f14c1ba97246157b7a18c066e956edcf:tests/test_ai_consumers.py:generic-secret:481
+4814e841f14c1ba97246157b7a18c066e956edcf:tests/test_ai_provider.py:generic-secret:215
+7714c53993daada7dbd262702933df77d45ec1eb:tests/test_remediation_gemini.py:generic-secret:19
+7714c53993daada7dbd262702933df77d45ec1eb:tests/test_remediation_gemini.py:generic-secret:21
+7714c53993daada7dbd262702933df77d45ec1eb:tests/test_remediation_gemini.py:generic-secret:36
+7714c53993daada7dbd262702933df77d45ec1eb:tests/test_remediation_gemini.py:generic-secret:67
+a628b947fbcbce8e50feaf336a602597c11ed007:tests/test_appsec_galaxy.py:generic-secret:396
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/eslint.json:generic-token:1
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/eslint.json:mongodb-uri:1
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:generic-token:249
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:generic-token:273
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:105
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:129
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:153
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:177
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:201
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:225
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:33
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:57
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:81
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:hardcoded-password:9
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:mongodb-uri:297
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_nodejs-goof/main/raw/gitleaks.json:mongodb-uri:322
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:10
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:106
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:155
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:156
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:180
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:181
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:pem-private-key:9
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:10
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:106
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:155
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:156
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:180
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:181
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/gitleaks.json:private-key:9
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:10
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:155
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:156
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:180
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:181
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:34
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:pem-private-key:9
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:10
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:155
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:156
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:180
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:181
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:34
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/gitleaks.json:private-key:9
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:src/enhanced_analyzer.py:generic-secret:674
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:generic-secret:55
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:hardcoded-password:361
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:hardcoded-password:46

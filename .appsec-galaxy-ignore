@@ -1,5 +1,10 @@
-# Intentional fake-secret fixtures used by the test suite.
-gitleaks:hardcoded-password:tests/conftest.py
-gitleaks:generic-secret:tests/conftest.py
-gitleaks:aws-access-key:tests/test_appsec_galaxy.py
-gitleaks:generic-secret:tests/test_appsec_galaxy.py
+# Intentional fake-secret fixtures used by the test suite (all of tests/ is
+# fixtures; includes files that only exist at historical commits, which the
+# CI history scan still reports).
+gitleaks:*:tests/*
+# Raw scan outputs of demo apps (nodejs-goof etc.) committed before outputs/
+# was gitignored. Fake demo secrets; published history is never rewritten.
+gitleaks:*:outputs/*
+# Remediation doc example at historical commits (current tree uses the
+# allowlisted your-api-key-here placeholder).
+gitleaks:generic-secret:src/enhanced_analyzer.py

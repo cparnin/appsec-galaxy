@@ -34,7 +34,7 @@ def test_distribution_namespace_imports():
     import appsec_galaxy
 
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.6.1"
+    assert appsec_galaxy.__version__ == "2.6.2"
 
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
@@ -4003,11 +4003,11 @@ class TestSarifExport:
         findings hash identically, different findings differently."""
         from appsec_galaxy.reporting.sarif import findings_to_sarif
         results = findings_to_sarif(self._sample_findings(), '/repo')['runs'][0]['results']
-        hashes = [r['partialFingerprints']['primaryLocationLineHash'] for r in results]
+        hashes = [r['partialFingerprints']['appsecGalaxy/v1'] for r in results]
         assert all(len(h) == 64 and int(h, 16) >= 0 for h in hashes)
         assert len(set(hashes)) == len(hashes)  # distinct findings, distinct hashes
         rerun = findings_to_sarif(self._sample_findings(), '/repo')['runs'][0]['results']
-        assert [r['partialFingerprints']['primaryLocationLineHash'] for r in rerun] == hashes
+        assert [r['partialFingerprints']['appsecGalaxy/v1'] for r in rerun] == hashes
 
     def test_fingerprint_prefers_snippet_over_line(self):
         """Same snippet moved to a new line must keep its fingerprint."""
@@ -4015,7 +4015,7 @@ class TestSarifExport:
         f1 = {'tool': 'semgrep', 'check_id': 'sqli', 'path': 'a.py',
               'start': {'line': 10}, 'extra': {'message': 'm', 'lines': 'db.query(x)'}, 'severity': 'high'}
         f2 = {**f1, 'start': {'line': 55}}
-        h = [r['partialFingerprints']['primaryLocationLineHash']
+        h = [r['partialFingerprints']['appsecGalaxy/v1']
              for r in findings_to_sarif([f1, f2], '')['runs'][0]['results']]
         assert h[0] == h[1]
 

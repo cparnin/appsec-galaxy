@@ -669,7 +669,7 @@ class CrossFileEnhancedAnalyzer:
             ])
 
             remediation["code_examples"].append(
-                "# Instead of: API_KEY = 'hardcoded-secret'\n"
+                "# Instead of: API_KEY = 'your-api-key-here'\n"
                 "# Use: API_KEY = os.getenv('API_KEY')"
             )
 
