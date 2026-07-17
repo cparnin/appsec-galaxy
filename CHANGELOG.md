@@ -5,6 +5,19 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.6.1] - 2026-07-17
+
+### Fixed
+
+- Pip-installed runs (the self-scan, the GitHub Action) resolved resource
+  paths relative to the installed package, so scan outputs were written
+  next to site-packages where CI steps never looked: the artifact upload
+  was empty, the new SARIF upload found nothing, the fail-on-critical
+  gate read an empty directory and passed trivially, and the Action's
+  count outputs reported zero. `project_paths` now falls back to the
+  working directory when not running from a source checkout. Source
+  checkouts (CLI, web, MCP, dev) are unchanged.
+
 ## [2.6.0] - 2026-07-17
 
 ### Added

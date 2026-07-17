@@ -34,7 +34,7 @@ def test_distribution_namespace_imports():
     import appsec_galaxy
 
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.6.0"
+    assert appsec_galaxy.__version__ == "2.6.1"
 
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
@@ -2845,6 +2845,31 @@ class TestAIScanCostCap:
         action = (Path(__file__).resolve().parent.parent / 'action.yml').read_text()
         assert 'ai-scan-max-cost:' in action
         assert 'APPSEC_AI_SCAN_MAX_COST: ${{ inputs.ai-scan-max-cost }}' in action
+
+
+class TestProjectPathsResolution:
+    """Resource paths resolve to the repo root in a source checkout and to
+    the working directory when pip-installed. Regression: installed runs
+    (self-scan, the Action) wrote outputs next to site-packages, where the
+    SARIF upload, artifact upload, and fail-on-critical gate never looked.
+    """
+
+    def test_source_checkout_uses_checkout_root(self, tmp_path):
+        from appsec_galaxy.project_paths import _resolve_resource_root
+        (tmp_path / 'pyproject.toml').write_text('[project]\nname = "x"\n')
+        assert _resolve_resource_root(tmp_path) == tmp_path
+
+    def test_installed_package_falls_back_to_cwd(self, tmp_path):
+        from appsec_galaxy.project_paths import _resolve_resource_root
+        # tmp_path has no pyproject.toml, like site-packages' parent
+        assert _resolve_resource_root(tmp_path) == Path.cwd()
+
+    def test_this_checkout_resolves_to_repo_root(self):
+        """Dev behavior is unchanged: outputs at the repo root."""
+        from appsec_galaxy import project_paths
+        repo_root = Path(__file__).resolve().parent.parent
+        assert project_paths.OUTPUTS_DIR == repo_root / 'outputs'
+        assert project_paths.CONFIGS_DIR == repo_root / 'configs'
 
 
 # ---------------------------------------------------------------------------
