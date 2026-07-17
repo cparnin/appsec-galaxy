@@ -505,8 +505,8 @@ class TestSemgrep:
     def test_command_disables_metrics(
         self, mock_validate_repo, mock_subprocess, mock_repo, output_dir
     ):
-        """--config auto phones scan telemetry home unless --metrics=off;
-        a tool scanning private/client code must not send it."""
+        """Registry-fetching configs phone scan telemetry home unless
+        --metrics=off; a tool scanning private/client code must not send it."""
         mock_validate_repo.return_value = mock_repo
 
         result = Mock()
@@ -518,6 +518,37 @@ class TestSemgrep:
         run_semgrep(str(mock_repo), str(output_dir))
         cmd = mock_subprocess.call_args_list[0][0][0]
         assert "--metrics=off" in cmd
+
+    @patch('appsec_galaxy.scanners.semgrep.subprocess.run')
+    @patch('appsec_galaxy.scanners.semgrep.validate_repo_path')
+    def test_command_uses_pinned_ruleset_by_default(
+        self, mock_validate_repo, mock_subprocess, mock_repo, output_dir, monkeypatch
+    ):
+        """Rulesets are pinned (p/default), not 'auto': the same code must
+        produce the same findings across CLI, CI, and time."""
+        monkeypatch.delenv('APPSEC_SEMGREP_CONFIG', raising=False)
+        mock_validate_repo.return_value = mock_repo
+        mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
+
+        run_semgrep(str(mock_repo), str(output_dir))
+        cmd = mock_subprocess.call_args_list[0][0][0]
+        configs = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == '--config']
+        assert configs == ['p/default']
+
+    @patch('appsec_galaxy.scanners.semgrep.subprocess.run')
+    @patch('appsec_galaxy.scanners.semgrep.validate_repo_path')
+    def test_command_honors_ruleset_override(
+        self, mock_validate_repo, mock_subprocess, mock_repo, output_dir, monkeypatch
+    ):
+        """APPSEC_SEMGREP_CONFIG accepts a comma-separated ruleset list."""
+        monkeypatch.setenv('APPSEC_SEMGREP_CONFIG', 'p/ci, p/xss')
+        mock_validate_repo.return_value = mock_repo
+        mock_subprocess.return_value = Mock(returncode=0, stdout="", stderr="")
+
+        run_semgrep(str(mock_repo), str(output_dir))
+        cmd = mock_subprocess.call_args_list[0][0][0]
+        configs = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == '--config']
+        assert configs == ['p/ci', 'p/xss']
 
 
 # ============================================================================
@@ -2710,6 +2741,112 @@ class TestPrivacyTierSurfaces:
         assert 'APPSEC_AI_SCAN_TIER: ${{ inputs.ai-scan-tier }}' in action
 
 
+class TestAIScannerDiffScope:
+    """The AI scanner honors APPSEC_DIFF_ONLY like the rule-based scanners:
+    changed files only, failing open to a full selection when the diff is
+    unavailable."""
+
+    def _repo(self, tmp_path):
+        (tmp_path / 'changed.py').write_text('x = 1\n')
+        (tmp_path / 'untouched.py').write_text('y = 2\n')
+        return tmp_path
+
+    def test_diff_only_restricts_candidates_to_changed_files(self, monkeypatch, tmp_path):
+        from appsec_galaxy import scan_filters
+        from appsec_galaxy.scanners.ai_scanner import _select_security_files
+        monkeypatch.setenv('APPSEC_DIFF_ONLY', 'true')
+        monkeypatch.setattr(scan_filters, 'get_changed_files', lambda repo: {'changed.py'})
+
+        selected = _select_security_files(self._repo(tmp_path))
+        assert [f['path'] for f in selected] == ['changed.py']
+
+    def test_diff_only_fails_open_when_diff_unavailable(self, monkeypatch, tmp_path):
+        from appsec_galaxy import scan_filters
+        from appsec_galaxy.scanners.ai_scanner import _select_security_files
+        monkeypatch.setenv('APPSEC_DIFF_ONLY', 'true')
+        monkeypatch.setattr(scan_filters, 'get_changed_files', lambda repo: None)
+
+        selected = _select_security_files(self._repo(tmp_path))
+        assert sorted(f['path'] for f in selected) == ['changed.py', 'untouched.py']
+
+    def test_diff_off_selects_everything(self, monkeypatch, tmp_path):
+        from appsec_galaxy.scanners.ai_scanner import _select_security_files
+        monkeypatch.delenv('APPSEC_DIFF_ONLY', raising=False)
+
+        selected = _select_security_files(self._repo(tmp_path))
+        assert sorted(f['path'] for f in selected) == ['changed.py', 'untouched.py']
+
+
+class TestAIScanCostCap:
+    """APPSEC_AI_SCAN_MAX_COST is a hard USD ceiling on AI scanner spend."""
+
+    def test_cap_parsing(self, monkeypatch):
+        from appsec_galaxy.scanners.ai_scanner import _get_cost_cap
+        monkeypatch.delenv('APPSEC_AI_SCAN_MAX_COST', raising=False)
+        assert _get_cost_cap() is None
+        monkeypatch.setenv('APPSEC_AI_SCAN_MAX_COST', '1.50')
+        assert _get_cost_cap() == 1.5
+        monkeypatch.setenv('APPSEC_AI_SCAN_MAX_COST', '0')
+        assert _get_cost_cap() is None
+        monkeypatch.setenv('APPSEC_AI_SCAN_MAX_COST', 'lots')
+        assert _get_cost_cap() is None
+
+    def test_estimate_uses_cached_input_discount(self):
+        from appsec_galaxy.scanners import ai_scanner
+        ai_scanner.reset_scan_token_usage()
+        try:
+            ai_scanner._record_token_usage(1_000_000, 0, 500_000)
+            pricing = {'input': 2.0, 'cached_input': 0.2, 'output': 10.0}
+            # 500k uncached at $2/M plus 500k cache reads at $0.2/M
+            assert ai_scanner._estimate_scan_cost(pricing) == pytest.approx(1.1)
+        finally:
+            ai_scanner.reset_scan_token_usage()
+
+    def test_cap_stops_issuing_batches(self, monkeypatch, tmp_path, caplog):
+        """Once estimated spend reaches the cap, remaining batches must not
+        be sent; the warning names the env var so the user can raise it."""
+        from appsec_galaxy.scanners import ai_scanner
+        monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '3')
+        monkeypatch.setenv('APPSEC_AI_SCAN_DEPTH', 'quick')
+        monkeypatch.setenv('APPSEC_AI_SCAN_MAX_COST', '1.00')
+        monkeypatch.delenv('APPSEC_DIFF_ONLY', raising=False)
+
+        # Ten ~48KB files force at least two batches (350KB batch limit).
+        blob = 'x = 1\n' * 8000
+        for i in range(10):
+            (tmp_path / f'file_{i}.py').write_text(blob)
+
+        calls = {'n': 0}
+
+        def fake_call(client, model, sys_prompt, user_msg, max_tokens):
+            calls['n'] += 1
+            return '[]'
+
+        monkeypatch.setattr(ai_scanner, '_call_ai', fake_call)
+        monkeypatch.setattr(ai_scanner, '_get_ai_client', lambda: object())
+        monkeypatch.setattr(ai_scanner, '_estimate_scan_cost', lambda pricing: 99.0)
+
+        with caplog.at_level('WARNING'):
+            findings = ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path))
+
+        assert findings == []
+        assert calls['n'] == 1, 'batches after the cap must not be sent'
+        assert 'APPSEC_AI_SCAN_MAX_COST' in caplog.text
+
+    def test_config_rejects_negative_cap(self, monkeypatch):
+        import pydantic
+        from appsec_galaxy.config import AppSecGalaxySettings
+        monkeypatch.setenv('APPSEC_AI_SCAN_MAX_COST', '-1')
+        with pytest.raises(pydantic.ValidationError):
+            AppSecGalaxySettings()
+
+    def test_action_exposes_and_maps_the_cost_input(self):
+        action = (Path(__file__).resolve().parent.parent / 'action.yml').read_text()
+        assert 'ai-scan-max-cost:' in action
+        assert 'APPSEC_AI_SCAN_MAX_COST: ${{ inputs.ai-scan-max-cost }}' in action
+
+
 # ---------------------------------------------------------------------------
 # CLI Directory Browser Tests
 # ---------------------------------------------------------------------------
@@ -3543,6 +3680,7 @@ class TestAppSecGalaxySettings:
         for var in ('APPSEC_CODE_QUALITY', 'APPSEC_CODE_QUALITY_MIN_SEVERITY',
                     'APPSEC_AI_SCAN', 'APPSEC_AI_SCAN_DEPTH',
                     'APPSEC_AI_SCAN_MAX_FILES', 'APPSEC_AI_SCAN_TIER',
+                    'APPSEC_AI_SCAN_MAX_COST', 'APPSEC_SEMGREP_CONFIG',
                     'APPSEC_DEPENDENCY_ANALYSIS', 'APPSEC_DEP_HEALTH_CHECK',
                     'APPSEC_TRIVY_SCANNERS'):
             monkeypatch.delenv(var, raising=False)

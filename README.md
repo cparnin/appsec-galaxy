@@ -126,7 +126,14 @@ or the web UI's AI Data Privacy dropdown, per repository with the Action's
 Semgrep, Gitleaks, and Trivy analyze code locally. Some enrichment still makes
 outbound calls with non-source data: EPSS/CISA-KEV lookups send CVE IDs
 (`APPSEC_VULN_INTEL=false` to disable), dependency health sends package names
-(`APPSEC_DEP_HEALTH_CHECK=false`), and Semgrep fetches rules via `--config auto`.
+(`APPSEC_DEP_HEALTH_CHECK=false`), and Semgrep downloads its pinned rulesets
+(`p/default`; override with `APPSEC_SEMGREP_CONFIG`) from the registry.
+
+AI spend is visible and cappable: every scan prints token usage and estimated
+USD, and `APPSEC_AI_SCAN_MAX_COST` (or the Action's `ai-scan-max-cost` input)
+is a hard ceiling; the scan stops issuing AI calls once it is reached. With
+`APPSEC_DIFF_ONLY=true`, the AI scanner analyzes only the files changed vs the
+base ref, which makes per-PR AI scans cost cents instead of a full-repo pass.
 
 ## Outputs
 
@@ -159,7 +166,8 @@ trivy:CVE-2024-1234:*
 
 Set `APPSEC_DIFF_ONLY=true` to keep findings only in files changed from
 `APPSEC_DIFF_BASE` (default `origin/main`, with `origin/master` fallback).
-Both filters fail open so configuration errors do not hide findings.
+The AI scanner honors the same scope, analyzing only changed files. Both
+filters fail open so configuration errors do not hide findings.
 
 ## MCP
 

@@ -134,6 +134,32 @@ def get_depth_pricing(depth: str) -> dict[str, float]:
     provider_pricing = MODEL_PRICING[_get_ai_provider()]
     return provider_pricing.get(depth, provider_pricing['standard'])
 
+
+def _get_cost_cap() -> float | None:
+    """APPSEC_AI_SCAN_MAX_COST as a positive float, or None for no cap."""
+    raw = os.getenv('APPSEC_AI_SCAN_MAX_COST', '').strip()
+    if not raw:
+        return None
+    try:
+        cap = float(raw)
+    except ValueError:
+        logger.warning(f"APPSEC_AI_SCAN_MAX_COST is not a number ('{raw}'); ignoring the cap")
+        return None
+    return cap if cap > 0 else None
+
+
+def _estimate_scan_cost(pricing: dict[str, float]) -> float:
+    """Estimated USD spend of this scan so far, from the token counters.
+    Cache reads are discounted at the cached_input rate."""
+    snapshot = get_scan_token_usage()
+    cached = min(snapshot['cache_read_tokens'], snapshot['input_tokens'])
+    uncached = snapshot['input_tokens'] - cached
+    return (
+        (uncached / 1_000_000) * pricing['input']
+        + (snapshot['output_tokens'] / 1_000_000) * pricing['output']
+        + (cached / 1_000_000) * pricing['cached_input']
+    )
+
 # File patterns that indicate security-relevant code
 SECURITY_RELEVANT_PATTERNS = {
     'auth': ['auth', 'login', 'session', 'token', 'jwt', 'oauth', 'password', 'credential',
@@ -332,11 +358,23 @@ def _call_openai(client: Any, model_id: str, system_prompt: str, user_message: s
 
 def _call_anthropic(client: Any, model_id: str, system_prompt: str, user_message: str,
                     max_tokens: int) -> str:
-    """One Anthropic Messages API call; records token usage."""
+    """One Anthropic Messages API call; records token usage.
+
+    The system prompt is identical across every call in a scan, so it goes
+    out as an explicit cache breakpoint (Anthropic caching is opt-in;
+    OpenAI caches shared prefixes automatically). Cache reads bill at the
+    cached_input rate and are already tracked and discounted in the cost
+    math. Prompts below the API's minimum cacheable size (1024 tokens) make
+    this a no-op; it activates automatically when prompts are larger.
+    """
     response = client.messages.create(
         model=model_id,
         max_tokens=max_tokens,
-        system=system_prompt,
+        system=[{
+            'type': 'text',
+            'text': system_prompt,
+            'cache_control': {'type': 'ephemeral'},
+        }],
         messages=[{'role': 'user', 'content': user_message}],
     )
     usage = getattr(response, 'usage', None)
@@ -463,8 +501,27 @@ def _select_security_files(repo_path: Path, max_files: int = 50) -> list[dict[st
     """
     candidates: list[dict[str, Any]] = []
 
+    # Diff-only mode: restrict candidates to files changed vs the base ref,
+    # matching the scoping the rule-based scanners already get from
+    # scan_filters. Fails open to a full-repo selection when the diff cannot
+    # be computed (same contract as filter_diff_only).
+    diff_scope: set[str] | None = None
+    if os.getenv('APPSEC_DIFF_ONLY', 'false').lower() == 'true':
+        from appsec_galaxy.scan_filters import get_changed_files
+        diff_scope = get_changed_files(str(repo_path))
+        if diff_scope is None:
+            logger.warning(
+                "AI scanner: diff-only requested but no usable base ref; "
+                "analyzing the full repository (fail open)"
+            )
+        else:
+            logger.info(f"AI scanner: diff-only scope active ({len(diff_scope)} changed files)")
+
     for file_path in repo_path.rglob('*'):
         if file_path.is_dir():
+            continue
+
+        if diff_scope is not None and file_path.relative_to(repo_path).as_posix() not in diff_scope:
             continue
 
         # Skip ignored directories
@@ -1048,10 +1105,25 @@ def run_ai_scan(repo_path: str, output_dir: str | None = None, scan_level: str |
 
         logger.info(f"AI scanner: processing {len(batches)} batch(es)")
 
-        # Step 3: Run scan on each batch
+        # Step 3: Run scan on each batch. APPSEC_AI_SCAN_MAX_COST is a hard
+        # USD ceiling: spend is re-estimated between AI calls and the scan
+        # stops issuing new ones at the cap (the in-flight call completes,
+        # so the final bill can overshoot by roughly one batch).
         reset_scan_token_usage()
+        cost_cap = _get_cost_cap()
+        pricing = get_depth_pricing(depth)
         all_raw_findings = []
         for i, batch in enumerate(batches):
+            if cost_cap is not None and i > 0:
+                spend = _estimate_scan_cost(pricing)
+                if spend >= cost_cap:
+                    skipped = sum(len(b) for b in batches[i:])
+                    logger.warning(
+                        f"AI scanner: estimated spend ${spend:.2f} reached "
+                        f"APPSEC_AI_SCAN_MAX_COST=${cost_cap:.2f}; stopping with "
+                        f"{len(batches) - i} batch(es) ({skipped} files) unscanned"
+                    )
+                    break
             logger.info(f"AI scanner: scanning batch {i+1}/{len(batches)} ({len(batch)} files)")
             system_prompt, user_message = _build_scan_prompt(batch, depth)
 
@@ -1077,8 +1149,16 @@ def run_ai_scan(repo_path: str, output_dir: str | None = None, scan_level: str |
         logger.info(f"AI scanner: {len(validated_findings)} findings passed structural validation")
 
         # Step 5: Verification pass (challenges findings to reduce false positives)
-        # Skip for quick scans to keep cost low
-        if depth in ('standard', 'deep') and validated_findings:
+        # Skip for quick scans to keep cost low, and skip when the cost cap
+        # is already spent (verification failure preserves findings, so
+        # skipping it fails safe: findings are kept, not dropped).
+        over_cap = cost_cap is not None and _estimate_scan_cost(pricing) >= cost_cap
+        if over_cap and depth in ('standard', 'deep') and validated_findings:
+            logger.warning(
+                f"AI scanner: verification pass skipped, estimated spend reached "
+                f"APPSEC_AI_SCAN_MAX_COST=${cost_cap:.2f}; findings kept unverified"
+            )
+        if depth in ('standard', 'deep') and validated_findings and not over_cap:
             verified_findings = _run_verification_pass(
                 client, model_id, validated_findings, files, max_tokens
             )
@@ -1099,14 +1179,8 @@ def run_ai_scan(repo_path: str, output_dir: str | None = None, scan_level: str |
             ]
 
         # Step 8: Calculate cost estimate (uses module-level MODEL_PRICING)
-        pricing = get_depth_pricing(depth)
         token_snapshot = get_scan_token_usage()
-        cached_tokens = min(token_snapshot['cache_read_tokens'], token_snapshot['input_tokens'])
-        uncached_tokens = token_snapshot['input_tokens'] - cached_tokens
-        cost_input = (uncached_tokens / 1_000_000) * pricing['input']
-        cost_output = (token_snapshot['output_tokens'] / 1_000_000) * pricing['output']
-        cost_cache = (cached_tokens / 1_000_000) * pricing['cached_input']
-        total_cost = cost_input + cost_output + cost_cache
+        total_cost = _estimate_scan_cost(pricing)
 
         # Step 9: Save raw AI findings to output
         ai_output_file = output_path / "ai_scan.json"

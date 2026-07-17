@@ -5,6 +5,32 @@ semantic versioning.
 
 ## Unreleased
 
+### Added
+
+- The AI scanner honors `APPSEC_DIFF_ONLY`: with diff mode on, only files
+  changed vs the base ref are selected for AI analysis (fail-open to a
+  full-repo selection when the diff is unavailable, matching the rule-based
+  scanners). Makes per-PR AI scans cost cents instead of a full-repo pass.
+- `APPSEC_AI_SCAN_MAX_COST` (Action input `ai-scan-max-cost`): a hard USD
+  ceiling for the AI scanner phase. Spend is re-estimated between AI calls
+  and the scan stops issuing new ones at the cap; the verification pass is
+  skipped fail-safe (findings kept unverified) when the cap is already
+  spent. The self-scan weekly AI run is capped at $1.00.
+- Anthropic prompt caching: the system prompt is sent as an ephemeral cache
+  breakpoint (OpenAI caches shared prefixes automatically). Cache reads
+  were already tracked and discounted at the `cached_input` rate; this
+  makes Anthropic actually produce them. Dormant below the API's
+  1024-token cacheable minimum.
+- Self-scan uploads SARIF to GitHub Code Scanning (free on public repos),
+  so findings land in the Security tab with PR annotations.
+
+### Changed
+
+- Semgrep rulesets are pinned (`p/default`) instead of `--config auto`, so
+  the same code produces the same findings across CLI, CI, and time.
+  Override with `APPSEC_SEMGREP_CONFIG` (comma-separated; `auto` restores
+  the old dynamic selection).
+
 ## [2.5.0] - 2026-07-17
 
 ### Added

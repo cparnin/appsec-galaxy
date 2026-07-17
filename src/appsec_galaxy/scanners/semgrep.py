@@ -70,29 +70,33 @@ def run_semgrep(repo_path: str, output_dir: str | None = None, scan_level: str |
             size = file_path.stat().st_size if exists else 0
             logger.debug(f"Critical file check: {file} exists={exists} size={size}")
 
-        # Use auto config for consistent rule loading across all environments
-        # This downloads the latest available rules and ensures CI/CD vs CLI consistency
+        # Pinned ruleset for reproducible scans. `--config auto` picked rules
+        # per repository (and per registry state), so the same code could
+        # produce different findings between runs; a fixed ruleset list makes
+        # results comparable across CLI, CI, and time. Override with
+        # APPSEC_SEMGREP_CONFIG (comma-separated registry configs or paths;
+        # 'auto' restores the old behavior).
         semgrep_exe = Path(sys.executable).with_name('semgrep')
         if semgrep_exe.exists():
             cmd = [str(semgrep_exe)]
         else:
             cmd = ["semgrep"]
 
+        configs_raw = os.getenv('APPSEC_SEMGREP_CONFIG', '').strip() or 'p/default'
+        semgrep_configs = [c.strip() for c in configs_raw.split(',') if c.strip()]
+        for config in semgrep_configs:
+            cmd.extend(["--config", config])
         cmd.extend([
-            "--config", "auto",  # Security rules
             "--metrics=off",  # No scan telemetry to the Semgrep registry (private/client code)
             "--json",
             "--output", str(output_file)
         ])
 
-        # Add code quality rules if enabled
-        # Note: p/code-smells and p/maintainability were deprecated by Semgrep
-        # Code quality patterns are now part of the standard security rules via --config auto
+        # Code quality: best-practice and correctness rules ship inside the
+        # default rulesets; no separate config needed.
         from appsec_galaxy.config import ENABLE_CODE_QUALITY
         if ENABLE_CODE_QUALITY:
-            logger.info("📊 Code quality scanning enabled (included in --config auto)")
-            # The --config auto already includes best-practice and correctness rules
-            # No need to add separate rulesets
+            logger.info(f"📊 Code quality scanning enabled (rulesets: {', '.join(semgrep_configs)})")
 
         # Add exclusion patterns
         for pattern in SCAN_EXCLUDE_PATTERNS:

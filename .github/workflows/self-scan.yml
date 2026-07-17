@@ -2,11 +2,11 @@ name: Self-Scan
 
 # AppSec Galaxy scanning itself, dogfood-style.
 # Rule-based scanners run on every push/PR (free). The AI deep scan runs
-# only on the weekly schedule (~$0.35/run) so we keep dogfooding it without
-# paying per-push. Auto-remediation is OFF (scan-only Mode 4) so this job
-# can never open PRs against ourselves. SARIF is included in the uploaded
-# artifact; the Security-tab upload step is intentionally omitted because
-# it requires GitHub Advanced Security (paid on private repos).
+# only on the weekly schedule (~$0.35/run, hard-capped at $1 by
+# APPSEC_AI_SCAN_MAX_COST) so we keep dogfooding it without paying
+# per-push. Auto-remediation is OFF (scan-only Mode 4) so this job can
+# never open PRs against ourselves. SARIF goes to the Security tab via
+# upload-sarif (free on public repos) and is also in the uploaded artifact.
 
 on:
   push:
@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      security-events: write  # upload-sarif to the Security tab
 
     steps:
       - name: Checkout
@@ -62,9 +63,31 @@ jobs:
           # AI deep scan: weekly schedule only (cost control); rule-based
           # scanners still run on every push/PR
           APPSEC_AI_SCAN: ${{ github.event_name == 'schedule' && secrets.OPENAI_API_KEY != '' && 'true' || 'false' }}
+          APPSEC_AI_SCAN_MAX_COST: "1.00"  # hard ceiling; weekly scan normally ~$0.35
           AI_PROVIDER: openai
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python -m appsec_galaxy.main
+
+      - name: Collect SARIF
+        id: sarif
+        if: always()
+        # Outputs are repo-namespaced (outputs/<repo>/report.sarif); resolve
+        # to a fixed path so the upload step has a deterministic input.
+        run: |
+          f=$(ls outputs/*/report.sarif outputs/report.sarif 2>/dev/null | head -1 || true)
+          if [ -n "$f" ]; then
+            cp "$f" appsec-galaxy.sarif
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload SARIF to Code Scanning
+        if: always() && steps.sarif.outputs.found == 'true'
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # v4
+        with:
+          sarif_file: appsec-galaxy.sarif
+          category: appsec-galaxy
 
       - name: Upload scan artifacts
         if: always()

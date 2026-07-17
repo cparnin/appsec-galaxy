@@ -88,7 +88,7 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (493 tests, ~7s). Personal project of cparnin; MIT licensed.
+suite (503 tests, ~7s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
@@ -152,7 +152,15 @@ retries (3 attempts, transient errors only), token/cost accounting, and
 - Cost visibility: token usage and estimated USD print after every scan and
   land in `outputs/<repo>/raw/ai_scan.json`. `APPSEC_AI_SCAN_MAX_FILES`
   (default 50) is the main cost lever; when the cap drops candidates a
-  warning names the count and the env var.
+  warning names the count and the env var. `APPSEC_AI_SCAN_MAX_COST` is a
+  hard USD ceiling: spend is re-estimated between AI calls and the scan
+  stops issuing new ones at the cap (verification skip fails safe, keeping
+  findings unverified). `APPSEC_DIFF_ONLY=true` scopes the AI scanner to
+  changed files, same as the rule-based scanners.
+- Prompt caching: the Anthropic system prompt goes out as an ephemeral
+  cache breakpoint (OpenAI caches shared prefixes automatically); cache
+  reads are tracked and billed at the `cached_input` rate in cost
+  estimates. Dormant below the 1024-token cacheable minimum.
 
 ## Architecture Map
 
@@ -217,12 +225,14 @@ loudly on bad values. Key groups:
 - Provider: `AI_PROVIDER`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
   `AI_MODEL`, `APPSEC_AI_SCAN_MODEL`
 - AI scan: `APPSEC_AI_SCAN` (off by default), `APPSEC_AI_SCAN_DEPTH`,
-  `APPSEC_AI_SCAN_MAX_FILES`, `APPSEC_AI_SCAN_TIER` (privacy: 1 none,
-  2 snippets, 3 full source), `APPSEC_AI_CROSS_FILE_MAX_*` cost caps
+  `APPSEC_AI_SCAN_MAX_FILES`, `APPSEC_AI_SCAN_TIER` (privacy: 1 no AI,
+  2 metadata only, 3 full source), `APPSEC_AI_SCAN_MAX_COST` (hard USD
+  ceiling; 0/unset uncapped), `APPSEC_AI_CROSS_FILE_MAX_*` cost caps
 - Scanning: `APPSEC_SCAN_LEVEL` (security), `APPSEC_CODE_QUALITY_MIN_SEVERITY`
   (quality; independent filters), `APPSEC_TOOLS`, `APPSEC_DIFF_ONLY`/`_BASE`,
-  `APPSEC_TRIVY_SCANNERS` (default `vuln,misconfig`; `vuln` reverts to
-  dependency CVEs only)
+  `APPSEC_SEMGREP_CONFIG` (pinned rulesets, default `p/default`; `auto`
+  restores dynamic selection), `APPSEC_TRIVY_SCANNERS` (default
+  `vuln,misconfig`; `vuln` reverts to dependency CVEs only)
 - Auto-fix: `APPSEC_AUTO_FIX`, `APPSEC_AUTO_FIX_MODE` (1 SAST, 2 deps,
   3 both, 4 skip), `GITHUB_TOKEN` (repo scope, PR creation only)
 - Web: `HOST` (default 127.0.0.1), `PORT`, `APPSEC_WEB_API_KEY`,
@@ -270,9 +280,11 @@ vs unknown model vs network before any scan spend.
 **"Auto-fix not creating PRs?"** `GITHUB_TOKEN` with repo scope; in Actions,
 `contents: write` + `pull-requests: write` permissions.
 
-**"AI scan cost too high?"** Lower `APPSEC_AI_SCAN_DEPTH` (quick uses the
-cheapest tier and skips verification), reduce `APPSEC_AI_SCAN_MAX_FILES`,
-check the printed per-scan cost and `ai_scan.json` token usage.
+**"AI scan cost too high?"** Set `APPSEC_AI_SCAN_MAX_COST` for a hard USD
+ceiling, lower `APPSEC_AI_SCAN_DEPTH` (quick uses the cheapest tier and
+skips verification), reduce `APPSEC_AI_SCAN_MAX_FILES`, or scope PR scans
+with `APPSEC_DIFF_ONLY=true` (the AI scanner honors it). Check the printed
+per-scan cost and `ai_scan.json` token usage.
 
 **"Watermark/logo missing in web UI?"** Dark mode only by design;
 `images/appsec-galaxy-mark.svg` served via `/images/`, wired in

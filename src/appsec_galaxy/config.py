@@ -120,6 +120,13 @@ class AppSecGalaxySettings(BaseSettings):
     ai_scan_depth: str = Field(default="standard", alias="APPSEC_AI_SCAN_DEPTH")
     ai_scan_max_files: int = Field(default=50, ge=1, alias="APPSEC_AI_SCAN_MAX_FILES")
     ai_scan_tier: int = Field(default=3, ge=1, le=3, alias="APPSEC_AI_SCAN_TIER")
+    # Hard USD ceiling for the AI scanner phase; 0/unset means no cap.
+    ai_scan_max_cost: float = Field(default=0.0, ge=0, alias="APPSEC_AI_SCAN_MAX_COST")
+
+    # Semgrep ruleset list (comma-separated registry configs or local paths).
+    # Pinned by default for reproducible scans; 'auto' restores dynamic
+    # per-repo rule selection.
+    semgrep_config: str = Field(default="p/default", alias="APPSEC_SEMGREP_CONFIG")
 
     # Dependency code-path analysis and registry health checks.
     dependency_analysis: bool = Field(default=True, alias="APPSEC_DEPENDENCY_ANALYSIS")

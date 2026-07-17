@@ -57,6 +57,10 @@ inputs:
     description: 'AI data privacy tier: 1 = no AI calls, 2 = finding metadata only (no source code), 3 = full source files (default). Tiers 1 and 2 disable AI deep analysis and AI code fixes.'
     required: false
     default: '3'
+  ai-scan-max-cost:
+    description: 'Hard USD ceiling for the AI scanner phase (e.g. "1.00"); the scan stops issuing AI calls at the cap. Empty = no cap.'
+    required: false
+    default: ''
 
 outputs:
   total-findings:
@@ -164,6 +168,7 @@ runs:
         APPSEC_AI_SCAN: ${{ inputs.ai-scan }}
         APPSEC_AI_SCAN_DEPTH: ${{ inputs.ai-scan-depth }}
         APPSEC_AI_SCAN_TIER: ${{ inputs.ai-scan-tier }}
+        APPSEC_AI_SCAN_MAX_COST: ${{ inputs.ai-scan-max-cost }}
         APPSEC_DEBUG: true
         APPSEC_LOG_LEVEL: DEBUG
       run: |

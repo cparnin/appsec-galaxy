@@ -7,6 +7,8 @@ APPSEC_AI_SCAN=true
 APPSEC_AI_SCAN_DEPTH=standard
 APPSEC_AI_SCAN_TIER=3
 APPSEC_AI_SCAN_MAX_FILES=75
+#APPSEC_AI_SCAN_MAX_COST=1.00      # Hard USD ceiling per AI scan (unset = no cap)
+#APPSEC_SEMGREP_CONFIG=p/default   # Pinned Semgrep rulesets (comma-separated; 'auto' = dynamic)
 
 # GitHub token for auto-remediation PRs (repo scope)
 #GITHUB_TOKEN=your-github-token-here

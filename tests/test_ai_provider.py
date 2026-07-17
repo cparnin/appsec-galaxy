@@ -329,7 +329,12 @@ def test_anthropic_request_output_and_usage_are_recorded():
     create.assert_called_once_with(
         model="claude-sonnet-5",
         max_tokens=512,
-        system="developer rules",
+        # Structured as a cache breakpoint (prompt caching is opt-in on Anthropic)
+        system=[{
+            "type": "text",
+            "text": "developer rules",
+            "cache_control": {"type": "ephemeral"},
+        }],
         messages=[{"role": "user", "content": "untrusted code"}],
     )
     assert ai_scanner.get_scan_token_usage() == {
