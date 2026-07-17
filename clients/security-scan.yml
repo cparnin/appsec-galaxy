@@ -53,6 +53,7 @@ jobs:
           scan-level: 'critical-high'
           # code-quality: 'true'  # Optional: Set to 'false' to disable code quality scanning (enabled by default)
           # dependency-analysis: 'true'  # Optional: Set to 'false' to disable dependency code-path analysis
+          # ai-scan-tier: '3'  # Optional AI data privacy: 1=no AI calls, 2=finding metadata only (no source), 3=full source (default)
           
       - name: Comment on PR
         if: github.event_name == 'pull_request' && always()

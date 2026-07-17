@@ -1278,6 +1278,30 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
     def remediate_findings(self, sast_findings: list[dict[str, Any]], repo_path: str, all_findings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Main method to remediate a list of SAST findings."""
         logger.info(f"🔧 remediate_findings called with {len(sast_findings)} SAST findings")
+
+        # Privacy tier gate: generating a code fix sends the vulnerable line
+        # plus surrounding context to the AI provider. Tiers 1 and 2 promise
+        # no source leaves the machine (same tier < 3 threshold as the AI
+        # scanner and cross-file analysis). Dependency fixes are unaffected;
+        # they never call the AI.
+        tier = int(os.getenv('APPSEC_AI_SCAN_TIER', '3'))
+        if tier < 3:
+            message = (f"AI code fixes skipped: privacy tier {tier} "
+                       f"(APPSEC_AI_SCAN_TIER) does not allow sending source code to the AI")
+            logger.info(message)
+            return {
+                'total_findings': len(sast_findings),
+                'remediable_findings': 0,
+                'successful_fixes': 0,
+                'failed_fixes': 0,
+                'skipped_multiline': 0,
+                'skipped_secrets': 0,
+                'fixes': [],
+                'branch_name': None,
+                'pr_url': None,
+                'success': False,
+                'message': message,
+            }
         # Use all_findings for PR context if provided, otherwise use sast_findings
         if all_findings is None:
             all_findings = sast_findings

@@ -53,6 +53,10 @@ inputs:
     description: 'AI scan depth: quick, standard, or deep'
     required: false
     default: 'standard'
+  ai-scan-tier:
+    description: 'AI data privacy tier: 1 = no AI calls, 2 = finding metadata only (no source code), 3 = full source files (default). Tiers 1 and 2 disable AI deep analysis and AI code fixes.'
+    required: false
+    default: '3'
 
 outputs:
   total-findings:
@@ -159,6 +163,7 @@ runs:
         APPSEC_DEPENDENCY_ANALYSIS: ${{ inputs.dependency-analysis }}
         APPSEC_AI_SCAN: ${{ inputs.ai-scan }}
         APPSEC_AI_SCAN_DEPTH: ${{ inputs.ai-scan-depth }}
+        APPSEC_AI_SCAN_TIER: ${{ inputs.ai-scan-tier }}
         APPSEC_DEBUG: true
         APPSEC_LOG_LEVEL: DEBUG
       run: |

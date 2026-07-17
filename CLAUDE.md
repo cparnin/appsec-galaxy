@@ -88,24 +88,29 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (484 tests, ~7s). Personal project of cparnin; MIT licensed.
+suite (493 tests, ~7s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
 ### CLI: `.venv/bin/appsec-galaxy` (or `python -m appsec_galaxy.main`)
 Interactive menus: repository picker, tool selection, severity level, AI
-provider picker (key status + live connection test), auto-fix options.
+provider picker (key status + live connection test), AI privacy tier picker
+(select_privacy_tier; tiers 1-2 drop the AI scanner from the run), auto-fix
+options.
 
 ### Web: `python -m appsec_galaxy.web_app` (port 8000, `./start_web.sh`)
 Same options as checkboxes/dropdowns, including the AI Provider dropdown
-populated from `/config` (default model + key status per provider). `/scan`
-accepts `ai_provider` and fails fast with a clear message when the provider
-is unusable. Galaxy brandmark backdrop renders bottom-right in dark mode
+populated from `/config` (default model + key status per provider) and an AI
+Data Privacy dropdown (tier; selecting 1 or 2 disables the AI Deep Analysis
+checkbox). `/scan` accepts `ai_provider` and `ai_scan_tier`, fails fast with
+a clear message when the provider is unusable, and rejects `ai_scan` at
+tiers 1-2. Galaxy brandmark backdrop renders bottom-right in dark mode
 (`images/appsec-galaxy-mark.svg`; hidden in light mode).
 
 ### GitHub Actions: `action.yml` + `clients/security-scan.yml`
 Declarative provider choice: `ai-provider` input (`openai` default or
-`anthropic`) with `openai-api-key` / `anthropic-api-key` secrets. Startup
+`anthropic`) with `openai-api-key` / `anthropic-api-key` secrets;
+`ai-scan-tier` input maps to `APPSEC_AI_SCAN_TIER`. Startup
 validation fails the job naming the missing key env var. `fail-on-critical`
 gates via `scripts/fail_on_critical.py` (`APPSEC_FAIL_THRESHOLD`).
 
@@ -237,7 +242,9 @@ a name-only grep when touching configuration.
 - Baseline and diff filters fail open; AI verification failures preserve
   original findings; cross-file/report AI failures degrade to static output.
 - Remediation: one-line replacements only, indentation preserved, protected
-  files and secrets excluded, multi-line model output rejected. Every applied
+  files and secrets excluded, multi-line model output rejected. AI code
+  fixes are privacy-tier gated (`APPSEC_AI_SCAN_TIER` < 3 skips them; the
+  fix prompt carries source context). Dependency bumps make no AI calls. Every applied
   fix passes `validate_file_syntax()`; a result that no longer parses is
   reverted (never committed). Additive findings (e.g. Docker missing-USER)
   are not auto-fixable because replace-mode cannot insert a line. Lockfile

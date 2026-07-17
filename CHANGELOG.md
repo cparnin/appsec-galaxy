@@ -7,12 +7,28 @@ semantic versioning.
 
 ### Added
 
+- The AI privacy tier (`APPSEC_AI_SCAN_TIER`) is now settable from every
+  deployment mode instead of `.env` only: an interactive CLI picker (shown
+  when the AI scanner is selected), an AI Data Privacy dropdown in the web
+  UI (`/scan` accepts `ai_scan_tier`, `/config` reports the default), and a
+  new `ai-scan-tier` Action input mapped to `APPSEC_AI_SCAN_TIER`.
 - `TestPrivacyTierContract`: pins the composite privacy-tier behavior across
   the split gates (`tier < 3` in ai_scanner and ai_cross_file, `tier < 2` in
   ai_summary) so the README privacy table and the code cannot drift apart.
   Includes sentinel tests that no AI client is ever constructed at tiers 1-2
   in the source-sending paths, and that secret values never enter the
-  findings digest. Tests only, no behavior change.
+  findings digest.
+
+### Fixed
+
+- Auto-remediation now honors the privacy tier: generating an AI code fix
+  sends the vulnerable line plus context to the AI provider, so tiers 1
+  and 2 skip AI code fixes with a clear message (previously remediation
+  ignored the tier entirely). Dependency version bumps make no AI calls
+  and still work at every tier. The web `/scan` endpoint also rejects
+  contradictory requests (AI deep analysis at tier 1 or 2) instead of
+  silently scanning without AI, and restores all env overrides on its
+  fail-fast error paths (previously only `AI_PROVIDER` was restored).
 
 ## [2.4.2] - 2026-07-13
 

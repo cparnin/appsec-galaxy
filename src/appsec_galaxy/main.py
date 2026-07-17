@@ -1217,6 +1217,34 @@ def select_ai_provider() -> str | None:
         current = provider
 
 
+def select_privacy_tier() -> int:
+    """Interactive AI privacy tier picker (APPSEC_AI_SCAN_TIER).
+
+    Controls what scan data may leave this machine for AI analysis. Sets
+    the choice in the process environment so every AI surface in this run
+    (AI scanner, cross-file analysis, exec summary, AI code fixes) honors
+    it. Returns the selected tier.
+    """
+    current = os.getenv('APPSEC_AI_SCAN_TIER', '3').strip()
+    if current not in ('1', '2', '3'):
+        current = '3'
+
+    print("\n🔒 AI data privacy tier (what may leave this machine):")
+    print("   [1] Nothing: no AI calls at all")
+    print("   [2] Metadata only: finding paths, lines, rules, and messages for the")
+    print("       executive summary; no source code (disables AI scanner and AI fixes)")
+    print("   [3] Full source: files are sent to the AI scanner for deep analysis")
+
+    while True:
+        choice = input(f"\nChoose privacy tier [1-3, Enter for {current}]: ").strip()
+        if not choice:
+            choice = current
+        if choice in ('1', '2', '3'):
+            os.environ['APPSEC_AI_SCAN_TIER'] = choice
+            return int(choice)
+        print("Invalid choice. Please enter 1-3")
+
+
 def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], auto_choice: int | None = None) -> dict:
     """Handle auto-remediation flow for findings"""
     total_findings = len(all_findings)
@@ -1525,6 +1553,9 @@ def main(argv: list[str] | None = None) -> None:
             if 'ai_scan' in selected_tools:
                 if select_ai_provider() is None:
                     print("⚠️  AI scanner disabled for this run (no working AI provider)")
+                    selected_tools.discard('ai_scan')
+                elif select_privacy_tier() < 3:
+                    print("⚠️  AI scanner disabled for this run (privacy tier blocks sending source code)")
                     selected_tools.discard('ai_scan')
 
             # Let user choose severity level

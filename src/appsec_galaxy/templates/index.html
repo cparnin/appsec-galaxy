@@ -662,6 +662,15 @@
                         </select>
                         <span class="field-help" id="aiProviderHelp"></span>
                     </div>
+                    <div class="field">
+                        <label class="field-label" for="aiScanTier">AI Data Privacy</label>
+                        <select id="aiScanTier" name="aiScanTier" title="What scan data may leave this machine for AI analysis. Tiers 1 and 2 disable AI Deep Analysis and AI code fixes.">
+                            <option value="1">Tier 1: nothing (no AI calls)</option>
+                            <option value="2">Tier 2: finding metadata only, no source</option>
+                            <option value="3">Tier 3: full source files (default)</option>
+                        </select>
+                        <span class="field-help" id="aiScanTierHelp"></span>
+                    </div>
                 </div>
             </section>
 
@@ -1134,11 +1143,36 @@
                     select.addEventListener('change', updateHelp);
                     updateHelp();
                 }
+                if (config.ai_scan_tier) {
+                    document.getElementById('aiScanTier').value = config.ai_scan_tier;
+                }
             } catch (e) {
                 // Leave the static OpenAI/Anthropic options in place.
             }
+            updateAiScanAvailability();
         }
         loadAiProviders();
+
+        // Tiers 1 and 2 forbid sending source code, which is exactly what AI
+        // Deep Analysis does; keep the checkbox and the tier picker in sync
+        // so /scan never has to reject a contradictory request.
+        function updateAiScanAvailability() {
+            const tier = document.getElementById('aiScanTier').value;
+            const aiScanBox = document.querySelector('input[name="tool_ai_scan"]');
+            const tierHelp = document.getElementById('aiScanTierHelp');
+            if (tier === '3') {
+                aiScanBox.disabled = false;
+                tierHelp.textContent = '';
+            } else {
+                aiScanBox.checked = false;
+                aiScanBox.disabled = true;
+                tierHelp.textContent = tier === '1'
+                    ? 'No data leaves this machine for AI. AI Deep Analysis and AI code fixes are off.'
+                    : 'Only finding metadata (paths, lines, rules, messages) may go to the AI for the executive summary. AI Deep Analysis and AI code fixes are off.';
+            }
+        }
+        document.getElementById('aiScanTier').addEventListener('change', updateAiScanAvailability);
+        updateAiScanAvailability();
 
         document.getElementById('scanForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -1160,6 +1194,7 @@
                 auto_fix: formData.get('autoFix') !== 'false',
                 auto_fix_mode: formData.get('autoFix'),
                 ai_provider: formData.get('aiProvider'),
+                ai_scan_tier: formData.get('aiScanTier'),
                 selected_tools: selectedTools
             };
             

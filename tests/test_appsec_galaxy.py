@@ -2649,6 +2649,66 @@ class TestPrivacyTierContract:
 
         assert placeholder not in digest
 
+    @pytest.mark.parametrize('tier', ['1', '2'])
+    def test_low_tiers_block_ai_code_fixes(self, monkeypatch, tier):
+        """Generating a code fix sends source context to the AI, so tiers 1
+        and 2 must skip it entirely (same threshold as the AI scanner)."""
+        from appsec_galaxy.auto_remediation.remediation import AutoRemediator
+
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', tier)
+        r = AutoRemediator.__new__(AutoRemediator)
+        r._logged_unsupported_types = set()
+        monkeypatch.setattr(
+            r, 'generate_code_fix',
+            lambda *a, **k: pytest.fail(f'tier {tier} must not generate AI code fixes'),
+            raising=False,
+        )
+
+        finding = {'tool': 'semgrep', 'check_id': 'sqli', 'path': 'app.py',
+                   'start': {'line': 4}, 'severity': 'critical',
+                   'extra': {'message': 'SQL injection', 'metadata': {}}}
+        result = r.remediate_findings([finding], '/tmp/repo')
+
+        assert result['success'] is False
+        assert result['fixes'] == []
+        assert 'APPSEC_AI_SCAN_TIER' in result['message']
+
+
+class TestPrivacyTierSurfaces:
+    """The tier is settable from every deployment mode, not just .env:
+    CLI picker, web dropdown (/scan param), and the Action input."""
+
+    def _feed_input(self, monkeypatch, answers):
+        answers = iter(answers)
+        monkeypatch.setattr('builtins.input', lambda _prompt='': next(answers))
+
+    def test_cli_picker_sets_env_and_returns_choice(self, monkeypatch):
+        from appsec_galaxy.main import select_privacy_tier
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '3')
+        self._feed_input(monkeypatch, ['2'])
+        assert select_privacy_tier() == 2
+        assert os.environ['APPSEC_AI_SCAN_TIER'] == '2'
+
+    def test_cli_picker_enter_keeps_current_default(self, monkeypatch):
+        from appsec_galaxy.main import select_privacy_tier
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '1')
+        self._feed_input(monkeypatch, [''])
+        assert select_privacy_tier() == 1
+        assert os.environ['APPSEC_AI_SCAN_TIER'] == '1'
+
+    def test_cli_picker_rejects_garbage_then_accepts(self, monkeypatch):
+        from appsec_galaxy.main import select_privacy_tier
+        monkeypatch.delenv('APPSEC_AI_SCAN_TIER', raising=False)
+        self._feed_input(monkeypatch, ['9', 'x', '3'])
+        assert select_privacy_tier() == 3
+
+    def test_action_exposes_and_maps_the_tier_input(self):
+        """action.yml must offer ai-scan-tier and wire it to the env var the
+        scanner reads; a rename on either side silently orphans the input."""
+        action = (Path(__file__).resolve().parent.parent / 'action.yml').read_text()
+        assert 'ai-scan-tier:' in action
+        assert 'APPSEC_AI_SCAN_TIER: ${{ inputs.ai-scan-tier }}' in action
+
 
 # ---------------------------------------------------------------------------
 # CLI Directory Browser Tests
@@ -3203,6 +3263,29 @@ class TestWebAppSmoke:
         """Repo-path validation should reject ../ traversal attempts."""
         response = client.post('/scan', json={'repo_path': '../../../etc/passwd'})
         assert response.status_code in (400, 403, 422)
+
+    def test_config_reports_privacy_tier(self, client, monkeypatch):
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '2')
+        response = client.get('/config')
+        assert response.status_code == 200
+        assert response.get_json().get('ai_scan_tier') == '2'
+
+    def test_scan_rejects_invalid_privacy_tier(self, client):
+        response = client.post('/scan', json={
+            'repo_path': '/tmp/repo', 'ai_scan_tier': '5',
+        })
+        assert response.status_code == 400
+        assert 'ai_scan_tier' in response.get_json()['error']
+
+    def test_scan_rejects_ai_scan_at_low_tier(self, client):
+        """The AI scanner sends full source; tiers 1 and 2 forbid that, so a
+        request asking for both must fail fast, not silently skip the scan."""
+        response = client.post('/scan', json={
+            'repo_path': '/tmp/repo', 'ai_scan_tier': '2',
+            'selected_tools': ['semgrep', 'ai_scan'],
+        })
+        assert response.status_code == 400
+        assert 'privacy tier' in response.get_json()['error']
 
     def test_unknown_route_returns_404(self, client):
         response = client.get('/this-route-does-not-exist-xyz')

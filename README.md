@@ -114,9 +114,14 @@ AI is off by default (`APPSEC_AI_SCAN=false`). Once enabled,
 | `2` | Finding metadata only: file paths, line numbers, rule IDs, and scanner messages for the top 15 findings, used to write the executive summary. No source files. |
 | `3` (default) | Source files (capped by `APPSEC_AI_SCAN_MAX_FILES`, default 50) plus the above. |
 
+The same threshold gates auto-remediation: AI code fixes send the vulnerable
+line plus context, so they require tier 3 and are skipped below it.
+Dependency version bumps never call the AI and work at every tier.
+
 Detected secret values are excluded from AI prompts at every tier; Gitleaks
-findings are summarized by type only. Set the tier in `.env`; there is no CLI
-or web control for it.
+findings are summarized by type only. Set the tier per run in the CLI picker
+or the web UI's AI Data Privacy dropdown, per repository with the Action's
+`ai-scan-tier` input, or persistently via `APPSEC_AI_SCAN_TIER` in `.env`.
 
 Semgrep, Gitleaks, and Trivy analyze code locally. Some enrichment still makes
 outbound calls with non-source data: EPSS/CISA-KEV lookups send CVE IDs
