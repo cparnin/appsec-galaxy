@@ -34,7 +34,7 @@ def test_distribution_namespace_imports():
     import appsec_galaxy
 
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.6.2"
+    assert appsec_galaxy.__version__ == "2.6.3"
 
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
@@ -1359,6 +1359,85 @@ class TestRemediationSandboxing:
             self._remediator()._update_go_mod('go.mod', 'github.com/x/y', '1.2.3', str(tmp_path))
         env = mock_run.call_args.kwargs.get('env') or {}
         assert env.get('GOTOOLCHAIN') == 'local'
+
+
+class TestRemediationPathConfinement:
+    """Auto-remediation must confine every file write to the scanned repo.
+
+    A finding's `path` is untrusted scanner output over a potentially
+    hostile repo. can_remediate_dependency() gates only on a substring
+    match, so a crafted path like `../../../etc/x/requirements.txt` passes
+    it; _fix_dependency and apply_fix must reject the escape before any
+    file operation. (CodeQL py/path-injection surfaced this flow.)
+    """
+
+    def _remediator(self):
+        from appsec_galaxy.auto_remediation.remediation import AutoRemediator
+        r = AutoRemediator.__new__(AutoRemediator)
+        r._logged_unsupported_types = set()
+        return r
+
+    def test_dependency_fix_rejects_traversal_path(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        # A real file outside the repo that the traversal targets.
+        outside = tmp_path / 'requirements.txt'
+        outside.write_text('flask==1.0\n')
+
+        finding = {
+            'path': '../requirements.txt', 'pkg_name': 'flask',
+            'installed_version': '1.0', 'fixed_version': '2.0',
+            'vulnerability_id': 'CVE-X',
+        }
+        result = self._remediator()._fix_dependency(finding, str(repo))
+
+        assert result is None, 'traversal path must be rejected'
+        # The load-bearing assertion: no backup write happened outside the repo.
+        assert not (tmp_path / 'requirements.txt.backup').exists()
+        assert outside.read_text() == 'flask==1.0\n', 'outside file must be untouched'
+
+    def test_dependency_fix_rejects_absolute_escape(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        target = tmp_path / 'evil.txt'
+        target.write_text('x')
+        # os.path.join(repo, '/abs') discards the repo prefix entirely.
+        finding = {
+            'path': str(target), 'pkg_name': 'flask',
+            'installed_version': '1.0', 'fixed_version': '2.0',
+            'vulnerability_id': 'CVE-X',
+        }
+        result = self._remediator()._fix_dependency(finding, str(repo))
+        assert result is None
+        assert not (tmp_path / 'evil.txt.backup').exists()
+
+    def test_apply_fix_rejects_traversal_path(self, tmp_path):
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        outside = tmp_path / 'secret.py'
+        outside.write_text('SAFE = 1\n')
+
+        fix = {
+            'file_path': '../secret.py', 'line_number': 1,
+            'fixed_line': 'PWNED = 1',
+        }
+        ok = self._remediator().apply_fix(fix, str(repo))
+
+        assert ok is False
+        assert outside.read_text() == 'SAFE = 1\n', 'file outside repo must be untouched'
+
+    def test_apply_fix_allows_in_repo_path(self, tmp_path):
+        """The confinement must not break the normal in-repo case."""
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        f = repo / 'app.py'
+        f.write_text('x = 1\n')
+
+        fix = {'file_path': 'app.py', 'line_number': 1, 'fixed_line': 'x = 2'}
+        ok = self._remediator().apply_fix(fix, str(repo))
+
+        assert ok is True
+        assert f.read_text() == 'x = 2\n'
 
 
 class TestDependencyAnalyzerIntegration:

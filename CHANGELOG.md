@@ -5,6 +5,27 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.6.3] - 2026-07-17
+
+### Security
+
+- Auto-remediation now confines every dependency-fix file operation to the
+  scanned repo. `_fix_dependency` built its target with
+  `os.path.join(repo_path, finding['path'])` and `can_remediate_dependency`
+  gated only on a substring match, so a crafted trivy finding path like
+  `../../../etc/x/requirements.txt` (findings are untrusted scanner output)
+  could make the tool write a `.backup` or rewrite a manifest-named file
+  outside the repo when dependency auto-fix was enabled. Now the resolved
+  path must sit under the repo root or the fix is skipped. `apply_fix` (the
+  SAST write sink) gained the same realpath confinement defensively; it was
+  already gated upstream by `_secure_file_path`, but now validates at its
+  own sink. Surfaced by CodeQL `py/path-injection` triage. Regression tests
+  added for traversal and absolute-path escapes.
+- The Action installs Syft via a SHA-pinned `anchore/sbom-action/download-syft`
+  step instead of `curl -sSfL ... | sh`, which executed unpinned fetched
+  bytes. Matches the pinning of every other setup step. (AppSec Galaxy's own
+  `gha-curl-pipe-shell` finding.)
+
 ## [2.6.2] - 2026-07-17
 
 ### Fixed

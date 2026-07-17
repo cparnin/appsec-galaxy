@@ -103,11 +103,14 @@ runs:
         run: false  # Just install, don't run yet
 
     - name: Setup Syft for SBOM generation
-      shell: bash
-      run: |
-        curl -sSfL https://raw.githubusercontent.com/anchore/syft/v1.46.0/install.sh | sh -s -- -b /usr/local/bin v1.46.0
-        syft version
-        
+      # Pinned action instead of curl | sh: piping a fetched script straight
+      # to a shell runs whatever the server returns, with no pinning of the
+      # executed bytes. The SHA-pinned action matches how every other setup
+      # step here is hardened.
+      uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+      with:
+        syft-version: v1.46.0
+
     - name: Setup Node.js for dependency fixes
       uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
       with:

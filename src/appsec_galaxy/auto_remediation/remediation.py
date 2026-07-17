@@ -715,6 +715,15 @@ Provide the corrected code for line {line_number}.
 
             full_path = os.path.join(repo_path, file_path)
 
+            # Confinement at the write sink. generate_code_fix already gates the
+            # path through _secure_file_path, but apply_fix must not rely on an
+            # upstream caller doing so: validate here too, so the sink is safe
+            # for any caller (defense in depth, matches the dependency path).
+            repo_root = os.path.realpath(repo_path)
+            if os.path.realpath(full_path) != repo_root and not os.path.realpath(full_path).startswith(repo_root + os.sep):
+                logger.warning(f"🚫 BLOCKED: fix path escapes repository boundary: {file_path}")
+                return False
+
             if any(ch in fixed_line for ch in ['\n', '\r']):
                 logger.error(f"Refusing to apply multi-line fix to {file_path}:{line_number}")
                 return False
@@ -1615,6 +1624,20 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
             vuln_id = finding.get('vulnerability_id', '')
 
             full_path = os.path.join(repo_path, target_path)
+
+            # Confinement: the finding 'path' is untrusted scanner output over a
+            # potentially hostile repo. Reject traversal/absolute escapes so a
+            # crafted manifest path cannot make us back up or rewrite a file
+            # outside the repo. The SAST fix path routes through
+            # _secure_file_path for the same reason; the dependency path must
+            # match it. can_remediate_dependency() gates only on a substring
+            # match, which a path like ../../../etc/x/requirements.txt passes.
+            repo_root = os.path.realpath(repo_path)
+            resolved_full = os.path.realpath(full_path)
+            if resolved_full != repo_root and not resolved_full.startswith(repo_root + os.sep):
+                logger.error(f"Dependency file path escapes repository boundary: {target_path}")
+                return None
+
             if not os.path.exists(full_path):
                 logger.warning(f"Dependency file not found: {full_path}")
                 return None
