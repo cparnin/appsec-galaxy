@@ -5,6 +5,8 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.5.0] - 2026-07-17
+
 ### Added
 
 - The AI privacy tier (`APPSEC_AI_SCAN_TIER`) is now settable from every

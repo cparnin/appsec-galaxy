@@ -1,6 +1,6 @@
 [project]
 name = "appsec-galaxy"
-version = "2.4.2"
+version = "2.5.0"
 description = "AI-powered application security scanner with cross-file attack-chain analysis"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

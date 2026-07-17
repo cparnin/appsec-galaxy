@@ -33,7 +33,7 @@ jobs:
       - name: Run AppSec Galaxy
         id: scanner
         timeout-minutes: 8
-        uses: cparnin/appsec-galaxy@v2.4.2  # Pinned release; bump deliberately when upgrading
+        uses: cparnin/appsec-galaxy@v2.5.0  # Pinned release; bump deliberately when upgrading
         env:
           GH_TOKEN: ${{ github.token }}  # GitHub CLI expects GH_TOKEN in Actions
           #APPSEC_AUTO_FIX_DELAY: '2'  # Optional: Add 2-second delay between fixes to prevent API rate limiting
