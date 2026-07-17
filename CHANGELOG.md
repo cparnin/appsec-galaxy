@@ -5,6 +5,8 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.6.0] - 2026-07-17
+
 ### Added
 
 - The AI scanner honors `APPSEC_DIFF_ONLY`: with diff mode on, only files

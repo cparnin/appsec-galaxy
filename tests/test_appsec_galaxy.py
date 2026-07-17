@@ -34,7 +34,7 @@ def test_distribution_namespace_imports():
     import appsec_galaxy
 
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.5.0"
+    assert appsec_galaxy.__version__ == "2.6.0"
 
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
