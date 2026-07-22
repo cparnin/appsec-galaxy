@@ -206,3 +206,7 @@ Architecture and security invariants are documented in
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+Built by [Chad Parnin](https://chadparnin.com).
