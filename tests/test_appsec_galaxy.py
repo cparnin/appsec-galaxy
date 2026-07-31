@@ -4594,13 +4594,17 @@ class TestMachineFacingIdentity:
             legacy = codecs.decode(encoded, 'rot13')
             assert legacy not in source.lower()
 
-    def test_workflow_quality_gates_and_self_scan_secret(self, root):
+    def test_workflow_quality_gates_and_ai_free_self_scan(self, root):
         tests_workflow = (root / '.github' / 'workflows' / 'tests.yml').read_text()
         self_scan = (root / '.github' / 'workflows' / 'self-scan.yml').read_text()
         assert 'ruff check src/ mcp/ scripts/ tests/' in tests_workflow
         assert 'mypy src/appsec_galaxy mcp scripts tests' in tests_workflow
         assert 'pytest tests/ -v --tb=short' in tests_workflow
-        assert 'secrets.OPENAI_API_KEY' in self_scan
+        # The self-scan is rule-based only: AI off, no provider secrets,
+        # no scheduled runs, zero API spend.
+        assert 'APPSEC_AI_SCAN: "false"' in self_scan
+        assert 'secrets.OPENAI_API_KEY' not in self_scan
+        assert '\n  schedule:' not in self_scan
         assert 'APPSEC_AUTO_FIX: "false"' in self_scan
         assert 'APPSEC_AUTO_FIX_MODE: "4"' in self_scan
         # rot13-encoded banned identities (see note in the action test above)

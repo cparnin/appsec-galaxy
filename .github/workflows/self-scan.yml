@@ -1,20 +1,18 @@
 name: Self-Scan
 
 # AppSec Galaxy scanning itself, dogfood-style.
-# Rule-based scanners run on every push/PR (free). The AI deep scan runs
-# only on the weekly schedule (~$0.35/run, hard-capped at $1 by
-# APPSEC_AI_SCAN_MAX_COST) so we keep dogfooding it without paying
-# per-push. Auto-remediation is OFF (scan-only Mode 4) so this job can
-# never open PRs against ourselves. SARIF goes to the Security tab via
-# upload-sarif (free on public repos) and is also in the uploaded artifact.
+# Rule-based scanners run on every push/PR (free, no AI/API calls).
+# The AI deep scan is deliberately disabled here: no scheduled runs, no
+# provider keys in this workflow, zero API spend. Auto-remediation is
+# OFF (scan-only Mode 4) so this job can never open PRs against
+# ourselves. SARIF goes to the Security tab via upload-sarif (free on
+# public repos) and is also in the uploaded artifact.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    - cron: '0 13 * * 1'  # Mondays 13:00 UTC: weekly AI deep scan
 
 jobs:
   self-scan:
@@ -60,12 +58,9 @@ jobs:
           APPSEC_AUTO_FIX_MODE: "4"         # scan only
           APPSEC_CODE_QUALITY: "true"
           APPSEC_DEBUG: "false"
-          # AI deep scan: weekly schedule only (cost control); rule-based
-          # scanners still run on every push/PR
-          APPSEC_AI_SCAN: ${{ github.event_name == 'schedule' && secrets.OPENAI_API_KEY != '' && 'true' || 'false' }}
-          APPSEC_AI_SCAN_MAX_COST: "1.00"  # hard ceiling; weekly scan normally ~$0.35
-          AI_PROVIDER: openai
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # AI deep scan disabled: rule-based scanners only, no API keys,
+          # no spend. Run AI scans locally when wanted.
+          APPSEC_AI_SCAN: "false"
         run: python -m appsec_galaxy.main
 
       - name: Collect SARIF

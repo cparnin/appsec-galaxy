@@ -303,7 +303,8 @@ per-scan cost and `ai_scan.json` token usage.
 - 2026-07-31: Flipped the default AI provider to Anthropic
   (DEFAULT_AI_PROVIDER in ai_scanner.py); OpenAI stays fully supported via
   AI_PROVIDER=openai. Refreshed OpenAI MODEL_PRICING for the 2026-07-30
-  price cut. The self-scan workflow still pins AI_PROVIDER: openai because
-  its repo secret is an OpenAI key.
+  price cut. The self-scan workflow is now rule-based only: no scheduled
+  runs, no AI calls, no provider secrets, zero CI API spend (owner
+  preference; run AI scans locally instead).
 - The private upstream checkout is a read-only reference and must never be
   modified (see rule 11).

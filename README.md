@@ -13,9 +13,10 @@ AI analysis (OpenAI or Anthropic) to map findings across files, identify attack
 chains, generate reports and SBOMs, and propose tightly constrained single-line
 remediations.
 
-**We dogfood it.** AppSec Galaxy scans its own code on every push and runs a
-weekly AI deep scan ([self-scan.yml](.github/workflows/self-scan.yml)); the
-Self-Scan badge above reflects the latest run. The same untrusted-input
+**We dogfood it.** AppSec Galaxy scans its own code with the rule-based
+scanners on every push and PR ([self-scan.yml](.github/workflows/self-scan.yml);
+no AI calls or API spend in CI); the Self-Scan badge above reflects the
+latest run. The same untrusted-input
 hardening it enforces on your repos (no lockfile scripts on hostile code, no
 auto-fix on untrusted PRs, allowlisted scan paths) it applies to itself.
 

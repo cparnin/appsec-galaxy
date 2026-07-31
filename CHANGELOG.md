@@ -13,8 +13,11 @@ semantic versioning.
   depth model mapping is unchanged (quick=claude-haiku-4-5,
   standard=claude-sonnet-5, deep=claude-opus-4-8). `env.example`,
   `mcp/mcp_env.example`, and the drop-in client workflow now lead with
-  `ANTHROPIC_API_KEY`. The repo self-scan workflow still pins
-  `AI_PROVIDER: openai` (its repo secret is an OpenAI key).
+  `ANTHROPIC_API_KEY`.
+- The self-scan workflow is rule-based only: removed the weekly scheduled
+  AI deep scan and all provider keys from CI, so the workflow makes no AI
+  API calls and costs nothing. Rule-based scanners still run on every
+  push and PR.
 - Refreshed the OpenAI rows of `MODEL_PRICING` for the 2026-07-30 price
   cut (gpt-5.6-luna $0.20/$1.20, gpt-5.6-terra $2/$12 per 1M tokens), so
   printed cost estimates match current list prices.
