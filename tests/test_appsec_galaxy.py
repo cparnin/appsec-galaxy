@@ -13,6 +13,7 @@ Run: pytest tests/test_appsec_galaxy.py -v
 import pytest
 import codecs
 import json
+import re
 import subprocess
 import os
 from pathlib import Path
@@ -65,6 +66,26 @@ def test_bundled_scanner_configs_resolve_to_checkout():
     assert (scanner.configs_dir / ".gitleaks.toml").is_file()
     assert (scanner.configs_dir / "eslint.config.js").is_file()
     assert (scanner.configs_dir / "checkstyle.xml").is_file()
+
+
+def test_gitleaks_config_extends_upstream_ruleset():
+    """The bundled gitleaks config must inherit the maintained upstream rules.
+
+    Without [extend] useDefault, detection is frozen at the ~20 hand-written
+    rules in this file: any credential format a provider introduces or
+    rotates later is silently undetectable, and nothing warns.
+    """
+    checkout_root = Path(__file__).resolve().parent.parent
+    config = (checkout_root / "configs" / ".gitleaks.toml").read_text()
+
+    assert "[extend]" in config
+    assert re.search(r"^\s*useDefault\s*=\s*true", config, re.M)
+    # The custom rules cover shapes the defaults miss; they must survive.
+    assert len(re.findall(r"^\[\[rules\]\]", config, re.M)) >= 20
+    # The bundled config is applied to *scanned* repos, so a broad path
+    # allowlist here would hide real secrets in someone else's repository.
+    # Repo-local noise belongs in this repo's .gitleaksignore instead.
+    assert "outputs/" not in config
 
 
 def test_web_images_route_serves_checkout_asset():

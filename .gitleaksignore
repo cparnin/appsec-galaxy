@@ -79,3 +79,15 @@ bd595f1748c59c6e0576e8e3ecd0400973f9fe17:src/enhanced_analyzer.py:generic-secret
 bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:generic-secret:55
 bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:hardcoded-password:361
 bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:hardcoded-password:46
+
+# Same already-suppressed fixture lines, re-matched by the upstream ruleset
+# after [extend] useDefault = true was enabled (same commit, file and line as
+# entries above -- only the rule name differs).
+a628b947fbcbce8e50feaf336a602597c11ed007:tests/test_appsec_galaxy.py:generic-api-key:396
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:generic-api-key:55
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:generic-api-key:137
+# Raw scan output of the deliberately-vulnerable demo apps, committed before
+# outputs/ was gitignored; these are the demo apps' own fake secrets, now also
+# matched by the upstream jwt rule. Published history is never rewritten.
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/semgrep.json:jwt:1
+bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/semgrep.json:jwt:1

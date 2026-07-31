@@ -2,6 +2,14 @@ title = "AppSec Galaxy Secrets Rules"
 
 gitignore = true
 
+# Inherit the upstream gitleaks ruleset (150+ maintained provider rules) and
+# layer the custom rules below on top. Without this, detection is frozen at
+# whatever formats were hand-written here: any credential prefix a provider
+# introduces or rotates from now on would be silently undetectable. The
+# custom rules stay because they cover shapes the defaults do not.
+[extend]
+useDefault = true
+
 [allowlist]
 paths = [
   '''\.venv/''',

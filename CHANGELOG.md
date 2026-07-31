@@ -7,6 +7,16 @@ semantic versioning.
 
 ### Security
 
+- The bundled gitleaks config now extends the upstream default ruleset
+  (`[extend] useDefault = true`), adding 150+ maintained provider rules on
+  top of the 20 hand-written ones. Detection was previously frozen at the
+  formats written by hand, so any credential prefix a provider introduced
+  or rotated was silently undetectable. Verified: an npm access token that
+  the old config missed is now caught, with no new findings on this repo
+  (the five re-matched fixture/demo lines are suppressed by fingerprint in
+  `.gitleaksignore`). Deliberately did **not** add a path allowlist to the
+  bundled config, since it applies to scanned repositories and would hide
+  real secrets in someone else's tree.
 - Gitleaks findings no longer carry the plaintext credential past the
   `Finding` boundary. `Secret` and `Match` are stripped in
   `Finding.from_gitleaks`, so the secret value no longer reaches the web
