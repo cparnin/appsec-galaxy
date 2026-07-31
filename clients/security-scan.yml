@@ -2,10 +2,10 @@ name: Security Scan
 
 # Copy this file to: .github/workflows/security-scan.yml
 # Drop-in workflow for client repositories.
-# One repository secret required: OPENAI_API_KEY
-# (https://platform.openai.com/api-keys)
-# Prefer Claude? Set ai-provider: 'anthropic' and provide ANTHROPIC_API_KEY
-# (https://console.anthropic.com/settings/keys) instead.
+# One repository secret required: ANTHROPIC_API_KEY
+# (https://console.anthropic.com/settings/keys)
+# Prefer OpenAI? Set ai-provider: 'openai' and provide OPENAI_API_KEY
+# (https://platform.openai.com/api-keys) instead.
 
 on:
   pull_request:
@@ -40,9 +40,9 @@ jobs:
           #APPSEC_DEBUG: 'true'        # Enable to see Semgrep version and debug info
           #APPSEC_LOG_LEVEL: 'DEBUG'   # Show detailed debugging information
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          # ai-provider: 'anthropic'                              # Optional: use Claude models
-          # anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # Required when ai-provider is anthropic
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ai-provider: 'openai'                          # Optional: use OpenAI models
+          # openai-api-key: ${{ secrets.OPENAI_API_KEY }}  # Required when ai-provider is openai
           ai-model: ''
           # Auto-fix runs on push and your own same-repo PRs. The action
           # forces it off only on fork PRs (outside code), so those are

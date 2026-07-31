@@ -1158,6 +1158,7 @@ def select_ai_provider() -> str | None:
     succeeds, or None if the user skips / the provider cannot be reached.
     """
     from appsec_galaxy.scanners.ai_scanner import (
+        DEFAULT_AI_PROVIDER,
         PROVIDER_KEY_ENV,
         SUPPORTED_PROVIDERS,
         api_key_present,
@@ -1167,9 +1168,9 @@ def select_ai_provider() -> str | None:
     )
 
     display_names = {'openai': 'OpenAI', 'anthropic': 'Anthropic'}
-    current = os.getenv('AI_PROVIDER', '').strip().lower() or 'openai'
+    current = os.getenv('AI_PROVIDER', '').strip().lower() or DEFAULT_AI_PROVIDER
     if current not in SUPPORTED_PROVIDERS:
-        current = 'openai'
+        current = DEFAULT_AI_PROVIDER
 
     while True:
         print("\n🤖 Select AI provider:")
@@ -1378,8 +1379,12 @@ def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], 
             # and reachable before doing any git work. Skipped if the AI
             # scanner already validated the provider earlier in this run.
             if choice != '4':
-                from appsec_galaxy.scanners.ai_scanner import SUPPORTED_PROVIDERS, api_key_present
-                provider = os.getenv('AI_PROVIDER', '').strip().lower() or 'openai'
+                from appsec_galaxy.scanners.ai_scanner import (
+                    DEFAULT_AI_PROVIDER,
+                    SUPPORTED_PROVIDERS,
+                    api_key_present,
+                )
+                provider = os.getenv('AI_PROVIDER', '').strip().lower() or DEFAULT_AI_PROVIDER
                 key_ready = provider in SUPPORTED_PROVIDERS and api_key_present(provider)
                 if not key_ready and select_ai_provider() is None:
                     print("⚠️  Skipping auto-fix (no working AI provider)")

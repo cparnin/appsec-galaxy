@@ -4580,7 +4580,7 @@ class TestMachineFacingIdentity:
             "author: 'AppSec Galaxy Contributors'\n"
         )
         assert 'ai-provider:' in source
-        assert "default: 'openai'" in source
+        assert "default: 'anthropic'" in source
         assert 'openai-api-key:' in source
         assert 'anthropic-api-key:' in source
         assert 'ai-model:' in source

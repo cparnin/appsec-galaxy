@@ -232,8 +232,8 @@ def scan_repository():
         # misconfiguration fails fast with a clear message instead of half
         # way through a scan.
         from appsec_galaxy.scanners.ai_scanner import (
-            PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, api_key_present,
-            reset_ai_client_cache, test_ai_connection,
+            DEFAULT_AI_PROVIDER, PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS,
+            api_key_present, reset_ai_client_cache, test_ai_connection,
         )
 
         if requested_provider and requested_provider not in SUPPORTED_PROVIDERS:
@@ -282,7 +282,9 @@ def scan_repository():
         # working provider when AI will actually be used.
         ai_requested = 'ai_scan' in scanners_to_run or (auto_fix and active_tier == '3')
         if ai_requested:
-            active_provider = (os.getenv('AI_PROVIDER', '') or 'openai').strip().lower() or 'openai'
+            active_provider = (
+                os.getenv('AI_PROVIDER', '').strip().lower() or DEFAULT_AI_PROVIDER
+            )
             key_env = PROVIDER_KEY_ENV.get(active_provider)
             if key_env and not api_key_present(active_provider):
                 _restore_scan_env()

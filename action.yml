@@ -8,9 +8,9 @@ branding:
 
 inputs:
   ai-provider:
-    description: "AI provider: 'openai' (default) or 'anthropic'"
+    description: "AI provider: 'anthropic' (default) or 'openai'"
     required: false
-    default: 'openai'
+    default: 'anthropic'
   openai-api-key:
     description: 'OpenAI API key used by AI scanning and remediation (AI_PROVIDER=openai)'
     required: false

@@ -108,8 +108,8 @@ tiers 1-2. Galaxy brandmark backdrop renders bottom-right in dark mode
 (`images/appsec-galaxy-mark.svg`; hidden in light mode).
 
 ### GitHub Actions: `action.yml` + `clients/security-scan.yml`
-Declarative provider choice: `ai-provider` input (`openai` default or
-`anthropic`) with `openai-api-key` / `anthropic-api-key` secrets;
+Declarative provider choice: `ai-provider` input (`anthropic` default or
+`openai`) with `anthropic-api-key` / `openai-api-key` secrets;
 `ai-scan-tier` input maps to `APPSEC_AI_SCAN_TIER`. Startup
 validation fails the job naming the missing key env var. `fail-on-critical`
 gates via `scripts/fail_on_critical.py` (`APPSEC_FAIL_THRESHOLD`).
@@ -129,9 +129,10 @@ retries (3 attempts, transient errors only), token/cost accounting, and
 `ai_cross_file.py`, `reporting/ai_summary.py`) reuse `_get_ai_client()` /
 `_call_ai()` and never construct SDK clients themselves.
 
-- `AI_PROVIDER`: blank/unset/`openai` resolve to OpenAI (Responses API);
-  `anthropic` selects Anthropic (Messages API); anything else is a loud
-  configuration error.
+- `AI_PROVIDER`: blank/unset/`anthropic` resolve to Anthropic (Messages API);
+  `openai` selects OpenAI (Responses API); anything else is a loud
+  configuration error. `DEFAULT_AI_PROVIDER` in ai_scanner.py is the single
+  source of truth (the MCP server mirrors it as a literal to stay offline).
 - Keys: `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` to match the provider;
   required only when AI scanning or auto-remediation is enabled.
 - Depth models (override with `APPSEC_AI_SCAN_MODEL`, then `AI_MODEL`):
@@ -299,5 +300,10 @@ per-scan cost and `ai_scan.json` token usage.
   employer, product, and provider identities are banned; the exact strings
   live rot13-encoded in the identity tests (TestMachineFacingIdentity and
   the consumer residue tests), so they never appear in this tree.
+- 2026-07-31: Flipped the default AI provider to Anthropic
+  (DEFAULT_AI_PROVIDER in ai_scanner.py); OpenAI stays fully supported via
+  AI_PROVIDER=openai. Refreshed OpenAI MODEL_PRICING for the 2026-07-30
+  price cut. The self-scan workflow still pins AI_PROVIDER: openai because
+  its repo secret is an OpenAI key.
 - The private upstream checkout is a read-only reference and must never be
   modified (see rule 11).

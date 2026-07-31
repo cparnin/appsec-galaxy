@@ -63,9 +63,10 @@ def _xml_safe_path(path: str, max_len: int = 200) -> str:
         text = text[:max_len] + '...'
     return text
 
-# Supported AI providers. OpenAI is the default; Anthropic is selected with
-# AI_PROVIDER=anthropic. Each provider needs its own API key env var.
+# Supported AI providers. Anthropic is the default; OpenAI is selected with
+# AI_PROVIDER=openai. Each provider needs its own API key env var.
 SUPPORTED_PROVIDERS = ('openai', 'anthropic')
+DEFAULT_AI_PROVIDER = 'anthropic'
 PROVIDER_KEY_ENV = {
     'openai': 'OPENAI_API_KEY',
     'anthropic': 'ANTHROPIC_API_KEY',
@@ -113,12 +114,14 @@ DEPTH_MAX_TOKENS = {
     'deep': 32768,
 }
 
-# List pricing per 1M text tokens as of 2026-07-11, per provider. Keep this
+# List pricing per 1M text tokens as of 2026-07-31, per provider. Keep this
 # table tied to the exact default models above and update it deliberately.
+# OpenAI cut luna/terra prices on 2026-07-30; Anthropic sonnet has intro
+# pricing (2.0/10.0) through 2026-08-31 but we bill-estimate at list price.
 MODEL_PRICING = {
     'openai': {
-        'quick': {'input': 1.0, 'cached_input': 0.1, 'output': 6.0},
-        'standard': {'input': 2.5, 'cached_input': 0.25, 'output': 15.0},
+        'quick': {'input': 0.2, 'cached_input': 0.02, 'output': 1.2},
+        'standard': {'input': 2.0, 'cached_input': 0.2, 'output': 12.0},
         'deep': {'input': 5.0, 'cached_input': 0.5, 'output': 30.0},
     },
     'anthropic': {
@@ -237,10 +240,13 @@ class _AIClient:
 def _get_ai_provider() -> str:
     """Return the configured AI provider ('openai' or 'anthropic').
 
-    Empty configuration defaults to OpenAI. An unknown provider fails loudly
-    so every application surface shares one contract.
+    Empty configuration defaults to Anthropic. An unknown provider fails
+    loudly so every application surface shares one contract.
     """
-    provider = os.getenv('AI_PROVIDER', 'openai').strip().lower() or 'openai'
+    provider = (
+        os.getenv('AI_PROVIDER', DEFAULT_AI_PROVIDER).strip().lower()
+        or DEFAULT_AI_PROVIDER
+    )
     if provider not in SUPPORTED_PROVIDERS:
         raise ValueError(
             f"AI_PROVIDER must be one of {', '.join(SUPPORTED_PROVIDERS)} "

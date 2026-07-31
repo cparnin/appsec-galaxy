@@ -1,7 +1,7 @@
 """AI consumer contracts for remediation and application wiring.
 
-OpenAI is the default provider; Anthropic is supported via
-AI_PROVIDER=anthropic. These tests pin the consumer-facing behavior:
+Anthropic is the default provider; OpenAI is supported via
+AI_PROVIDER=openai. These tests pin the consumer-facing behavior:
 model selection, provider validation, environment validation, and
 manifest/example contracts.
 """
@@ -397,6 +397,7 @@ def test_create_remediation_pr_openai_model_override(monkeypatch):
         )
         return {"success": True, "successful_fixes": 0}
 
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.setenv("AI_MODEL", " gpt-5.6-sol ")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
@@ -413,10 +414,10 @@ def test_create_remediation_pr_openai_model_override(monkeypatch):
     }
 
 
-def test_environment_validation_defaults_to_openai_without_ai_key(monkeypatch):
+def test_environment_validation_defaults_to_anthropic_without_ai_key(monkeypatch):
     config = validate_environment_config()
 
-    assert config["ai_provider"] == "openai"
+    assert config["ai_provider"] == "anthropic"
     assert config["ai_api_key"] is False
 
 
@@ -428,7 +429,8 @@ def test_environment_validation_rejects_unknown_provider(monkeypatch):
 
 
 @pytest.mark.parametrize("feature", ["APPSEC_AI_SCAN", "APPSEC_AUTO_FIX"])
-def test_environment_validation_requires_openai_key_for_ai_features(monkeypatch, feature):
+def test_environment_validation_requires_openai_key_when_selected(monkeypatch, feature):
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.setenv(feature, "true")
 
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
@@ -437,14 +439,14 @@ def test_environment_validation_requires_openai_key_for_ai_features(monkeypatch,
 
 def test_environment_validation_rejects_placeholder_key_for_ai_features(monkeypatch):
     monkeypatch.setenv("APPSEC_AI_SCAN", "true")
-    monkeypatch.setenv("OPENAI_API_KEY", "your-openai-api-key-here")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "your-anthropic-api-key-here")
 
-    with pytest.raises(ValueError, match="OPENAI_API_KEY is required"):
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY is required"):
         validate_environment_config()
 
 
 def test_environment_validation_placeholder_key_reads_as_absent(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "your-openai-api-key-here")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "your-anthropic-api-key-here")
 
     config = validate_environment_config()
 
@@ -452,8 +454,8 @@ def test_environment_validation_placeholder_key_reads_as_absent(monkeypatch):
 
 
 @pytest.mark.parametrize("feature", ["APPSEC_AI_SCAN", "APPSEC_AUTO_FIX"])
-def test_environment_validation_requires_anthropic_key_when_selected(monkeypatch, feature):
-    monkeypatch.setenv("AI_PROVIDER", "anthropic")
+def test_environment_validation_requires_anthropic_key_by_default(monkeypatch, feature):
+    # No AI_PROVIDER set: anthropic is the default provider.
     monkeypatch.setenv(feature, "true")
 
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
@@ -474,9 +476,9 @@ def test_environment_validation_anthropic_key_satisfies_anthropic(monkeypatch):
 def test_environment_validation_records_presence_without_logging_value(
     monkeypatch, caplog
 ):
-    secret = "test-openai-secret-value"
+    secret = "test-anthropic-secret-value"
     monkeypatch.setenv("APPSEC_AI_SCAN", "true")
-    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
 
     config = validate_environment_config()
 

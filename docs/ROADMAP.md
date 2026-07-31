@@ -23,8 +23,9 @@ Read `CLAUDE.md` first (standing rules); this doc is the "what next" on top of i
 
 ## Current state (as of 2026-07-12, v2.3.0 + follow-ups on main)
 
-- Dual AI provider (OpenAI default, Anthropic opt-in), CLI + web pickers,
-  live connection test. All AI goes through `scanners/ai_scanner.py`.
+- Dual AI provider (Anthropic default since 2026-07-31; OpenAI opt-in),
+  CLI + web pickers, live connection test. All AI goes through
+  `scanners/ai_scanner.py`.
 - Report is dark-themed; AI findings lead the detailed-findings block.
 - Auto-remediation is syntax-gated: every applied single-line fix passes
   `validate_file_syntax()` and is reverted if it no longer parses. Additive

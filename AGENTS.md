@@ -70,7 +70,7 @@ run; verification evidence must reflect the current working tree.
 
 ## AI provider boundary
 
-`AI_PROVIDER` may be blank, unset, `openai` (default), or `anthropic`; every
+`AI_PROVIDER` may be blank, unset, `anthropic` (default), or `openai`; every
 other nonblank value is a configuration error. The provider's API key
 (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) is required only when AI scanning or
 automated remediation is enabled.

@@ -85,8 +85,8 @@ Or start the local web interface:
 
 ## AI provider configuration
 
-AppSec Galaxy supports `AI_PROVIDER=openai` (the default -- blank or unset
-values resolve to OpenAI) and `AI_PROVIDER=anthropic`. The interactive CLI
+AppSec Galaxy supports `AI_PROVIDER=anthropic` (the default -- blank or unset
+values resolve to Anthropic) and `AI_PROVIDER=openai`. The interactive CLI
 shows a provider picker whenever AI features are enabled, verifies the matching
 API key is set (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`), and runs a one-token
 test call so misconfiguration fails before a scan starts, with a clear message.
@@ -186,8 +186,8 @@ MCP client.
 
 ## GitHub Action
 
-The reusable action accepts `ai-provider` (`openai` default, or `anthropic`),
-`openai-api-key`, `anthropic-api-key`, and optional `ai-model` inputs.
+The reusable action accepts `ai-provider` (`anthropic` default, or `openai`),
+`anthropic-api-key`, `openai-api-key`, and optional `ai-model` inputs.
 The drop-in workflow is in [clients/security-scan.yml](clients/security-scan.yml),
 with setup instructions in [clients/SETUP.md](clients/SETUP.md).
 

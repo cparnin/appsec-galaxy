@@ -1,7 +1,7 @@
-# AI provider: openai (default) or anthropic. Set the matching API key.
-AI_PROVIDER=openai
-OPENAI_API_KEY=your-openai-api-key-here
-#ANTHROPIC_API_KEY=your-anthropic-api-key-here
+# AI provider: anthropic (default) or openai. Set the matching API key.
+AI_PROVIDER=anthropic
+ANTHROPIC_API_KEY=your-anthropic-api-key-here
+#OPENAI_API_KEY=your-openai-api-key-here
 APPSEC_SCAN_LEVEL=all
 APPSEC_AI_SCAN=true
 APPSEC_AI_SCAN_DEPTH=standard

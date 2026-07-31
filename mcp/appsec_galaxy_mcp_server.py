@@ -1081,7 +1081,9 @@ def health_check() -> str:
             checks.append(f"❌ {name}: Not found in PATH")
             overall_status = "⚠️ Degraded"
 
-    ai_provider = (os.getenv('AI_PROVIDER', '').strip().lower() or 'openai')
+    # Keep in sync with ai_scanner.DEFAULT_AI_PROVIDER (not imported here so
+    # MCP startup stays offline and dependency-free).
+    ai_provider = (os.getenv('AI_PROVIDER', '').strip().lower() or 'anthropic')
     ai_key_env = 'ANTHROPIC_API_KEY' if ai_provider == 'anthropic' else 'OPENAI_API_KEY'
     if os.getenv(ai_key_env):
         checks.append(f"✅ AI provider ({ai_provider}): {ai_key_env} configured")

@@ -13,9 +13,9 @@ cp security-scan.yml .github/workflows/
 
 Go to **Settings → Secrets and variables → Actions** and add one secret:
 
-- `OPENAI_API_KEY` - get one at https://platform.openai.com/api-keys
-  (or use Claude: set `ai-provider: 'anthropic'` in the workflow and add an
-  `ANTHROPIC_API_KEY` secret from https://console.anthropic.com/settings/keys)
+- `ANTHROPIC_API_KEY` - get one at https://console.anthropic.com/settings/keys
+  (or use OpenAI: set `ai-provider: 'openai'` in the workflow and add an
+  `OPENAI_API_KEY` secret from https://platform.openai.com/api-keys)
 
 That's it. The workflow template is already wired to use it.
 

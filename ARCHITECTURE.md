@@ -153,7 +153,7 @@ fallback and finding normalization remain consistent.
 ## Key decisions
 
 - Source-layout packaging prevents checkout-relative import ambiguity.
-- One shared AI boundary supports two providers (OpenAI default, Anthropic
+- One shared AI boundary supports two providers (Anthropic default, OpenAI
   opt-in), keeping configuration and retry logic in a single module.
 - Rule-based results are authoritative; AI enrichment is optional and
   failure-tolerant.

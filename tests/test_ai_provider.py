@@ -1,6 +1,6 @@
 """Provider contracts for AppSec Galaxy's shared AI scanner layer.
 
-OpenAI is the default provider; Anthropic is opt-in via AI_PROVIDER=anthropic.
+Anthropic is the default provider; OpenAI is opt-in via AI_PROVIDER=openai.
 These tests pin the provider-resolution, client-construction, call, retry,
 and connection-test contracts for both providers.
 """
@@ -41,17 +41,17 @@ def isolated_provider(monkeypatch):
 # Provider resolution
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("configured", [None, "", "openai", " OPENAI "])
-def test_provider_defaults_to_openai(monkeypatch, configured):
+@pytest.mark.parametrize("configured", [None, "", "anthropic", " Anthropic "])
+def test_provider_defaults_to_anthropic(monkeypatch, configured):
     if configured is not None:
         monkeypatch.setenv("AI_PROVIDER", configured)
-    assert ai_scanner._get_ai_provider() == "openai"
-
-
-@pytest.mark.parametrize("configured", ["anthropic", " Anthropic "])
-def test_provider_accepts_anthropic(monkeypatch, configured):
-    monkeypatch.setenv("AI_PROVIDER", configured)
     assert ai_scanner._get_ai_provider() == "anthropic"
+
+
+@pytest.mark.parametrize("configured", ["openai", " OPENAI "])
+def test_provider_accepts_openai(monkeypatch, configured):
+    monkeypatch.setenv("AI_PROVIDER", configured)
+    assert ai_scanner._get_ai_provider() == "openai"
 
 
 @pytest.mark.parametrize(
@@ -77,7 +77,8 @@ def test_unknown_provider_is_rejected(monkeypatch, configured):
         ("unknown", "gpt-5.6-terra"),
     ],
 )
-def test_openai_depth_model_defaults(depth, expected):
+def test_openai_depth_model_defaults(monkeypatch, depth, expected):
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     assert ai_scanner._get_model_id(depth) == expected
 
 
@@ -90,8 +91,8 @@ def test_openai_depth_model_defaults(depth, expected):
         ("unknown", "claude-sonnet-5"),
     ],
 )
-def test_anthropic_depth_model_defaults(monkeypatch, depth, expected):
-    monkeypatch.setenv("AI_PROVIDER", "anthropic")
+def test_anthropic_depth_model_defaults(depth, expected):
+    # No AI_PROVIDER set: anthropic is the default provider.
     assert ai_scanner._get_model_id(depth) == expected
 
 
@@ -110,13 +111,14 @@ def test_get_default_model_ignores_env_overrides(monkeypatch):
 
 
 def test_depth_pricing_follows_provider(monkeypatch):
-    assert ai_scanner.get_depth_pricing("deep") == ai_scanner.MODEL_PRICING["openai"]["deep"]
-    monkeypatch.setenv("AI_PROVIDER", "anthropic")
+    # Default provider (anthropic) first, then an explicit switch to openai.
     assert ai_scanner.get_depth_pricing("deep") == ai_scanner.MODEL_PRICING["anthropic"]["deep"]
     assert (
         ai_scanner.get_depth_pricing("unknown")
         == ai_scanner.MODEL_PRICING["anthropic"]["standard"]
     )
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    assert ai_scanner.get_depth_pricing("deep") == ai_scanner.MODEL_PRICING["openai"]["deep"]
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +127,7 @@ def test_depth_pricing_follows_provider(monkeypatch):
 
 @pytest.mark.parametrize("api_key", [None, "", "   "])
 def test_client_requires_openai_api_key(monkeypatch, api_key):
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     if api_key is not None:
         monkeypatch.setenv("OPENAI_API_KEY", api_key)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
@@ -133,7 +136,7 @@ def test_client_requires_openai_api_key(monkeypatch, api_key):
 
 @pytest.mark.parametrize("api_key", [None, "", "   "])
 def test_client_requires_anthropic_api_key(monkeypatch, api_key):
-    monkeypatch.setenv("AI_PROVIDER", "anthropic")
+    # No AI_PROVIDER set: anthropic is the default provider.
     if api_key is not None:
         monkeypatch.setenv("ANTHROPIC_API_KEY", api_key)
     with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
@@ -178,6 +181,7 @@ def test_real_key_counts_as_present(monkeypatch):
 def test_openai_client_constructor_and_cache(monkeypatch):
     import openai
 
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     sdk_client = object()
     constructor = Mock(return_value=sdk_client)
@@ -199,7 +203,7 @@ def test_openai_client_constructor_and_cache(monkeypatch):
 def test_anthropic_client_constructor_and_cache(monkeypatch):
     import anthropic
 
-    monkeypatch.setenv("AI_PROVIDER", "anthropic")
+    # No AI_PROVIDER set: anthropic is the default provider.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
     sdk_client = object()
     constructor = Mock(return_value=sdk_client)
@@ -228,11 +232,11 @@ def test_provider_switch_rebuilds_cached_client(monkeypatch):
     monkeypatch.setattr(anthropic, "Anthropic", Mock(return_value=object()))
 
     first = ai_scanner._get_ai_client()
-    assert first.provider == "openai"
+    assert first.provider == "anthropic"
 
-    monkeypatch.setenv("AI_PROVIDER", "anthropic")
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     second = ai_scanner._get_ai_client()
-    assert second.provider == "anthropic"
+    assert second.provider == "openai"
     assert second is not first
 
 
@@ -460,9 +464,10 @@ def test_retryable_error_stops_after_three_attempts(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_connection_test_reports_missing_key():
+    # No AI_PROVIDER set: anthropic is the default provider.
     ok, message = ai_scanner.test_ai_connection()
     assert ok is False
-    assert "OPENAI_API_KEY is not set" in message
+    assert "ANTHROPIC_API_KEY is not set" in message
 
 
 def test_connection_test_reports_invalid_provider(monkeypatch):
@@ -473,6 +478,7 @@ def test_connection_test_reports_invalid_provider(monkeypatch):
 
 
 def test_connection_test_success(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(
         ai_scanner, "_get_ai_client", lambda: ai_scanner._AIClient("openai", object())
