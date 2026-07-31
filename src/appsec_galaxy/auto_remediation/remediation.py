@@ -39,6 +39,13 @@ def validate_package_name(name: str) -> bool:
     if len(name) > 200:
         return False
 
+    # Package names come from scanner output on an untrusted manifest. A
+    # leading hyphen would be parsed as a flag by the package manager
+    # (e.g. `go get -insecure...`), so reject it outright. Real package
+    # names never start with one.
+    if name.startswith('-'):
+        return False
+
     # Allow alphanumeric, dots, hyphens, underscores, forward slashes, @ and :
     # This covers most package naming conventions across ecosystems
     pattern = r'^[a-zA-Z0-9._/@:-]+$'
@@ -265,8 +272,10 @@ def _secure_file_path(repo_path: str, file_path: str) -> str | None:
         full_path = repo_path_obj / clean_path
         full_path = full_path.resolve()
 
-        # Ensure the resolved path is within the repository
-        if not str(full_path).startswith(str(repo_path_obj)):
+        # Ensure the resolved path is within the repository. Compare with a
+        # trailing separator so a sibling directory sharing the prefix
+        # (/repo-evil vs /repo) cannot pass, matching apply_fix's check.
+        if not str(full_path).startswith(str(repo_path_obj) + os.sep):
             logger.error(f"File path escapes repository boundary: {clean_path}")
             return None
 
@@ -1123,6 +1132,12 @@ Provide the corrected code for line {line_number}.
             )
             # Output looks like: "refs/remotes/origin/main" or "refs/remotes/origin/master"
             default_branch = result.stdout.strip().split('/')[-1]
+            # This value originates in the scanned repo's own refs (untrusted)
+            # and is passed to `git checkout`. Accept only ordinary refnames;
+            # anything else falls back to the safe default.
+            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]*', default_branch):
+                logger.warning("Unexpected default branch name from repo refs; using 'main'")
+                return "main"
             return default_branch
         except subprocess.CalledProcessError:
             # Fallback: check which branches exist
@@ -2025,8 +2040,10 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
 
             go_mod_dir = os.path.dirname(os.path.join(repo_path, file_path))
 
-            # Use separate arguments to prevent injection - never use f-strings in subprocess
-            cmd = ["go", "get", f"{pkg_name}@v{new_version}"]
+            # Use separate arguments to prevent injection - never use f-strings in subprocess.
+            # `--` ends option parsing so a package name can never be read as a flag
+            # (validate_package_name also rejects a leading hyphen; belt and braces).
+            cmd = ["go", "get", "--", f"{pkg_name}@v{new_version}"]
 
             # Log the command for debugging (safe since inputs are validated)
             logger.debug(f"Running Go command: {' '.join(shlex.quote(arg) for arg in cmd)}")

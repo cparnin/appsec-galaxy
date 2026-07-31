@@ -66,8 +66,8 @@ cp env.example .env
 For optional AI scanning, edit `.env` and set:
 
 ```dotenv
-AI_PROVIDER=openai                          # or: anthropic
-OPENAI_API_KEY=your-openai-api-key-here     # ANTHROPIC_API_KEY when AI_PROVIDER=anthropic
+AI_PROVIDER=anthropic                            # default; or: openai
+ANTHROPIC_API_KEY=your-anthropic-api-key-here    # OPENAI_API_KEY when AI_PROVIDER=openai
 APPSEC_AI_SCAN=true
 APPSEC_AI_SCAN_DEPTH=standard
 ```

@@ -3,8 +3,9 @@
 
 echo "🧪 Running tests..."
 
-# Run tests
-.venv/bin/python -m pytest tests/test_appsec_galaxy.py -v
+# Run the whole suite, matching the CI gate. Naming a single file here used
+# to silently skip tests/test_ai_provider.py and tests/test_ai_consumers.py.
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -v
 
 # Check exit code
 TEST_EXIT_CODE=$?

@@ -1089,6 +1089,21 @@ def run_ai_scan(repo_path: str, output_dir: str | None = None, scan_level: str |
         model_id = _get_model_id(depth)
         max_tokens = DEPTH_MAX_TOKENS[depth]
 
+        # Preflight the provider/model before spending a single batch. Without
+        # this, an unusable model (retired ID, revoked key) fails identically
+        # inside every batch, and the scan returns an empty findings list that
+        # is indistinguishable from a genuinely clean repository. Non-
+        # interactive runs (CI, MCP) never reach the CLI's connection test, so
+        # this is where that check has to live. One-token call.
+        ok, connection_message = test_ai_connection()
+        if not ok:
+            logger.error(
+                f"AI scanner: provider unusable, skipping AI analysis. {connection_message}"
+            )
+            print(f"⚠️  AI scan skipped: {connection_message}")
+            return []
+        logger.debug(f"AI scanner preflight: {connection_message}")
+
         # For large file sets, batch into chunks to stay within context limits
         # ~100K input tokens stays below the supported model context windows.
         # Rough estimate: 1 byte ≈ 0.25 tokens, so 400KB of source ≈ 100K tokens

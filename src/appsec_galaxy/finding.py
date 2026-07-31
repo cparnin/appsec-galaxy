@@ -77,11 +77,24 @@ class Finding:
             payload={**raw, "severity": normalized_severity, "tool": "semgrep", "category": category},
         )
 
+    #: Raw gitleaks keys carrying the plaintext credential. Dropped at this
+    #: boundary so the secret value never reaches an in-memory finding, and
+    #: therefore never reaches the web /scan JSON response, the HTML report,
+    #: or an AI prompt. The verbatim value stays only in the raw scanner
+    #: output under outputs/<repo>/raw/ (gitignored, documented as sensitive).
+    #: Confidence classification reads the value from the raw record before
+    #: this wrapper runs, so de-noising is unaffected.
+    _GITLEAKS_SECRET_KEYS = ("Secret", "Match")
+
     @classmethod
     def from_gitleaks(cls, raw: dict[str, Any]) -> "Finding":
         """Wrap a raw gitleaks result (capitalized keys preserved in payload).
         Secrets have no scanner-assigned severity; the pipeline treats them
-        as their own class of finding."""
+        as their own class of finding. The plaintext secret value is stripped
+        (see _GITLEAKS_SECRET_KEYS)."""
+        redacted = {
+            k: v for k, v in raw.items() if k not in cls._GITLEAKS_SECRET_KEYS
+        }
         return cls(
             tool="gitleaks",
             category="security",
@@ -89,7 +102,7 @@ class Finding:
             path=raw.get("File"),
             line=raw.get("StartLine"),
             message=raw.get("Description"),
-            payload={**raw, "tool": "gitleaks", "category": "security"},
+            payload={**redacted, "tool": "gitleaks", "category": "security"},
         )
 
     @classmethod

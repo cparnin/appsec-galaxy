@@ -885,8 +885,17 @@
 
                 if (data.error) {
                     // Most common cause: the server-side browsing policy gate.
-                    repoList.innerHTML = '<div style="padding: 15px; color: #9b2c2c;">' + data.error +
-                        '<br><small>To enable browsing, set APPSEC_ENABLE_DIRECTORY_BROWSING=true in .env and restart the server.</small></div>';
+                    // Server error text can echo untrusted paths -- textContent, not innerHTML.
+                    repoList.textContent = '';
+                    const box = document.createElement('div');
+                    box.style.padding = '15px';
+                    box.style.color = 'var(--critical)';
+                    box.appendChild(document.createTextNode(data.error));
+                    box.appendChild(document.createElement('br'));
+                    const hint = document.createElement('small');
+                    hint.textContent = 'To enable browsing, set APPSEC_ENABLE_DIRECTORY_BROWSING=true in .env and restart the server.';
+                    box.appendChild(hint);
+                    repoList.appendChild(box);
                 } else if (data.repositories && data.repositories.length > 0) {
                     renderBrowseList(repoList, data.repositories, null);
                 } else {
@@ -905,7 +914,13 @@
                 const response = await fetch('/browse-dir?path=' + encodeURIComponent(dirPath));
                 const data = await response.json();
                 if (data.error) {
-                    repoList.innerHTML = '<div style="padding: 15px; color: #e53e3e;">' + data.error + '</div>';
+                    // Untrusted path text can appear in server errors -- textContent, not innerHTML.
+                    repoList.textContent = '';
+                    const box = document.createElement('div');
+                    box.style.padding = '15px';
+                    box.style.color = 'var(--critical)';
+                    box.textContent = data.error;
+                    repoList.appendChild(box);
                     return;
                 }
                 renderBrowseList(repoList, data.items || [], data.parent_path);
@@ -914,60 +929,111 @@
             }
         }
 
+        // Directory names come from the scanned filesystem and are untrusted.
+        // Everything here is built with DOM APIs and textContent -- never by
+        // concatenating values into markup or inline on* handlers -- so a
+        // directory named `x" onmouseover="..."` cannot break out into script.
+        function makeEl(tag, className, text) {
+            const el = document.createElement(tag);
+            if (className) el.className = className;
+            if (text !== undefined) el.textContent = text;
+            return el;
+        }
+
+        function makeChevron() {
+            const NS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(NS, 'svg');
+            svg.setAttribute('viewBox', '0 0 20 20');
+            svg.setAttribute('width', '14');
+            svg.setAttribute('height', '14');
+            svg.setAttribute('aria-hidden', 'true');
+            const path = document.createElementNS(NS, 'path');
+            path.setAttribute('d', 'M7 5l6 5-6 5');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('stroke', 'currentColor');
+            path.setAttribute('stroke-width', '2');
+            path.setAttribute('stroke-linecap', 'round');
+            path.setAttribute('stroke-linejoin', 'round');
+            svg.appendChild(path);
+            return svg;
+        }
+
+        // Keyboard-operable row: real button semantics without losing the
+        // existing .repo-item styling.
+        function makeRow(classNames, onActivate, label) {
+            const row = makeEl('div', classNames);
+            row.setAttribute('role', 'button');
+            row.setAttribute('tabindex', '0');
+            if (label) row.setAttribute('aria-label', label);
+            row.addEventListener('click', onActivate);
+            row.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onActivate(e);
+                }
+            });
+            return row;
+        }
+
         function renderBrowseList(container, items, parentPath) {
-            const parts = [];
-            const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            const jsesc = (v) => String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const chevron = '<svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M7 5l6 5-6 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            container.textContent = '';
 
             if (parentPath) {
-                parts.push(
-                    '<div class="repo-item repo-back" onclick="browseInto(\'' + jsesc(parentPath) + '\')">' +
-                        '<div class="repo-icon">&#8593;</div>' +
-                        '<div class="repo-info">' +
-                            '<div class="repo-name">..</div>' +
-                            '<div class="repo-path">Go up</div>' +
-                        '</div>' +
-                    '</div>'
-                );
+                const back = makeRow('repo-item repo-back',
+                    function() { browseInto(parentPath); }, 'Go up one directory');
+                back.appendChild(makeEl('div', 'repo-icon', '↑'));
+                const backInfo = makeEl('div', 'repo-info');
+                backInfo.appendChild(makeEl('div', 'repo-name', '..'));
+                backInfo.appendChild(makeEl('div', 'repo-path', 'Go up'));
+                back.appendChild(backInfo);
+                container.appendChild(back);
             }
 
             if (items.length === 0 && !parentPath) {
-                container.innerHTML = '<div class="repo-empty">No subdirectories found</div>';
+                container.appendChild(makeEl('div', 'repo-empty', 'No subdirectories found'));
                 return;
             }
 
-            const typeIcons = { git: '&#128193;', nodejs: '&#128230;', python: '&#128013;', directory: '&#128193;' };
+            const typeIcons = { git: '\u{1F4C1}', nodejs: '\u{1F4E6}', python: '\u{1F40D}', directory: '\u{1F4C1}' };
 
             items.forEach(function(item) {
-                const icon = typeIcons[item.type] || '&#128193;';
+                const icon = typeIcons[item.type] || '\u{1F4C1}';
                 const isRepo = item.type !== 'directory';
+
                 if (isRepo) {
-                    parts.push(
-                        '<div class="repo-item repo-is-git">' +
-                            '<div class="repo-icon">' + icon + '</div>' +
-                            '<div class="repo-info" onclick="selectRepo(\'' + jsesc(item.path) + '\')">' +
-                                '<div class="repo-name">' + esc(item.name) + '</div>' +
-                                '<div class="repo-path">' + esc(item.path) + '</div>' +
-                            '</div>' +
-                            '<div class="repo-drill" onclick="event.stopPropagation(); browseInto(\'' + jsesc(item.path) + '\')" title="Browse into">' + chevron + '</div>' +
-                        '</div>'
-                    );
+                    // Repo row: body selects it, chevron drills in.
+                    const row = makeEl('div', 'repo-item repo-is-git');
+                    row.appendChild(makeEl('div', 'repo-icon', icon));
+
+                    const info = makeRow('repo-info',
+                        function() { selectRepo(item.path); }, 'Select repository ' + item.name);
+                    info.appendChild(makeEl('div', 'repo-name', item.name));
+                    info.appendChild(makeEl('div', 'repo-path', item.path));
+                    row.appendChild(info);
+
+                    const drill = makeRow('repo-drill', function(e) {
+                        e.stopPropagation();
+                        browseInto(item.path);
+                    }, 'Browse into ' + item.name);
+                    drill.title = 'Browse into';
+                    drill.appendChild(makeChevron());
+                    row.appendChild(drill);
+
+                    container.appendChild(row);
                 } else {
-                    parts.push(
-                        '<div class="repo-item" onclick="browseInto(\'' + jsesc(item.path) + '\')">' +
-                            '<div class="repo-icon">' + icon + '</div>' +
-                            '<div class="repo-info">' +
-                                '<div class="repo-name">' + esc(item.name) + '</div>' +
-                                '<div class="repo-path">' + esc(item.path) + '</div>' +
-                            '</div>' +
-                            '<div class="repo-drill">' + chevron + '</div>' +
-                        '</div>'
-                    );
+                    const row = makeRow('repo-item',
+                        function() { browseInto(item.path); }, 'Browse into ' + item.name);
+                    row.appendChild(makeEl('div', 'repo-icon', icon));
+                    const info = makeEl('div', 'repo-info');
+                    info.appendChild(makeEl('div', 'repo-name', item.name));
+                    info.appendChild(makeEl('div', 'repo-path', item.path));
+                    row.appendChild(info);
+                    const drill = makeEl('div', 'repo-drill');
+                    drill.appendChild(makeChevron());
+                    row.appendChild(drill);
+                    container.appendChild(row);
                 }
             });
-
-            container.innerHTML = parts.join('');
         }
 
         function promptForRepo() {
@@ -1245,10 +1311,22 @@
 
             // Update scan info with repository name prominently displayed
             const repoName = summary.repository_name || 'Unknown Repository';
-            document.getElementById('scanInfo').innerHTML =
-                `<strong style="font-size: 1.1em; color: #2c3e50;">📁 ${repoName}</strong><br>` +
-                `Path: ${summary.repository_path}<br>` +
-                `Scan Level: ${summary.scan_level} • Auto-fix: ${summary.auto_fix_enabled ? 'Enabled' : 'Disabled'}`;
+            // Repo name and path come from the scanned filesystem (untrusted):
+            // build with text nodes so a directory named `<img onerror=...>`
+            // renders as text instead of executing.
+            const scanInfo = document.getElementById('scanInfo');
+            scanInfo.textContent = '';
+            const nameEl = document.createElement('strong');
+            nameEl.style.fontSize = '1.1em';
+            nameEl.style.color = 'var(--ink)';
+            nameEl.textContent = '📁 ' + repoName;
+            scanInfo.appendChild(nameEl);
+            scanInfo.appendChild(document.createElement('br'));
+            scanInfo.appendChild(document.createTextNode('Path: ' + (summary.repository_path || '')));
+            scanInfo.appendChild(document.createElement('br'));
+            scanInfo.appendChild(document.createTextNode(
+                'Scan Level: ' + (summary.scan_level || '') +
+                ' • Auto-fix: ' + (summary.auto_fix_enabled ? 'Enabled' : 'Disabled')));
 
             // Update summary cards
             const summaryHtml = `

@@ -96,6 +96,46 @@ def enforce_api_key_for_sensitive_routes():
     return None
 
 
+@app.before_request
+def block_foreign_host_header():
+    """Reject non-loopback Host headers when bound to loopback.
+
+    Defends against DNS rebinding: an attacker page whose domain re-resolves
+    to 127.0.0.1 would otherwise be same-origin with this server and could
+    drive /scan and read /report even though CORS is off by default. Only
+    enforced for a loopback bind, so an intentional 0.0.0.0 deployment (which
+    already warns and wants an API key) is unaffected.
+    """
+    bind_host = os.environ.get('HOST', '127.0.0.1').strip()
+    if bind_host not in ('127.0.0.1', 'localhost', '::1'):
+        return None
+    hostname = (request.host or '').rsplit(':', 1)[0].strip('[]').lower()
+    if hostname and hostname not in ('127.0.0.1', 'localhost', '::1'):
+        logger.warning(f"Rejected request with non-loopback Host header: {hostname}")
+        return jsonify({'error': 'Invalid Host header'}), 400
+    return None
+
+
+@app.after_request
+def set_security_headers(response):
+    """Baseline security headers on every response.
+
+    The generated HTML report renders data from hostile scanned repos and is
+    served from this same origin, so a CSP here is defense in depth behind
+    Jinja autoescaping. setdefault() so per-route headers still win.
+    """
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'no-referrer')
+    response.headers.setdefault(
+        'Content-Security-Policy',
+        "default-src 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    )
+    return response
+
+
 def _restore_env(name: str, original: str | None) -> None:
     """Put an env var back to its pre-scan value (or remove it)."""
     if original:

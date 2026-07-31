@@ -226,6 +226,11 @@ def run_pylint(repo_path: str, output_dir: str | None = None) -> list:
             '--max-line-length=120'  # More reasonable than default 100
         ])
 
+        # End option parsing before the file list: filenames come from the
+        # scanned repo, and a file literally named "--rcfile=evil.cfg" would
+        # otherwise be parsed as a pylint flag (arbitrary plugin loading).
+        cmd.append('--')
+
         # Add Python files (convert to strings relative to repo root)
         for py_file in filtered_files[:500]:  # Limit to 500 files to prevent timeout
             try:
@@ -237,7 +242,7 @@ def run_pylint(repo_path: str, output_dir: str | None = None) -> list:
         if len(filtered_files) > 500:
             logger.warning(f"Scanning only first 500 of {len(filtered_files)} Python files (performance limit)")
 
-        logger.debug(f"Pylint scanning {len(cmd) - 6} Python files")
+        logger.debug(f"Pylint scanning {len(filtered_files[:500])} Python files")
 
         # Delete old output file
         if output_file.exists():

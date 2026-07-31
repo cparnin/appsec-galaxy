@@ -779,7 +779,8 @@ def view_report_html(repo_path: str) -> str:
 
     if os.path.exists(report_path):
         try:
-            subprocess.run(["open", report_path], check=True)  # macOS
+            # "--" so a report path starting with a hyphen is never read as a flag
+            subprocess.run(["open", "--", report_path], check=True)  # macOS
             return f"""# 🌐 HTML Report Opened!
 
 **Report Location**: `{report_path}`

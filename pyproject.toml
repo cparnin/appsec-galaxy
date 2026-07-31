@@ -33,8 +33,11 @@ web = [
 dev = [
     "pytest>=9.1.1,<10.0.0",
     "pytest-asyncio>=1.4.0,<2.0.0",
-    "ruff>=0.15.20",
-    "mypy>=2.1.0",
+    # Upper bounds on the two CI-blocking linters: both add rules in minor
+    # releases, so an unbounded range turns CI red with no code change.
+    # Bump deliberately and fix the new findings in the same commit.
+    "ruff>=0.15.20,<0.16.0",
+    "mypy>=2.1.0,<3.0.0",
 ]
 
 [build-system]

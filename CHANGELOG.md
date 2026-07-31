@@ -5,6 +5,53 @@ semantic versioning.
 
 ## Unreleased
 
+### Security
+
+- Gitleaks findings no longer carry the plaintext credential past the
+  `Finding` boundary. `Secret` and `Match` are stripped in
+  `Finding.from_gitleaks`, so the secret value no longer reaches the web
+  `/scan` JSON response, the HTML report, or any AI prompt. Confidence
+  classification is unaffected (it reads the raw record first), and the
+  verbatim value still exists only in `outputs/<repo>/raw/` (gitignored).
+  The MCP surface already redacted this; the web surface had diverged.
+- Fixed DOM XSS sinks in the web UI. The repository browser built
+  `onclick="browseInto('<path>')"` by string concatenation with an escaper
+  that handled `\` and `'` but not `"`, so a directory named
+  `x" onmouseover="..."` broke out of the attribute. The browser list, the
+  results-panel repo name/path, and server error text are now built with
+  DOM APIs and `textContent`, with no inline event handlers anywhere.
+- Added baseline security headers to every web response (CSP,
+  `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy`) as
+  defense in depth behind Jinja autoescaping, since the report rendered
+  from hostile scanned repos is served from the app's own origin.
+- Added a DNS-rebinding guard: when bound to loopback, requests carrying a
+  non-loopback `Host` header are rejected. An intentional `0.0.0.0`
+  deployment is unaffected.
+- Hardened argument handling against untrusted scanner output:
+  `validate_package_name` now rejects a leading hyphen, `go get` and macOS
+  `open` take `--`, and pylint's file list is preceded by `--` so a file
+  named `--rcfile=evil.cfg` cannot load an arbitrary plugin.
+- `_secure_file_path` now compares the repo boundary with a trailing
+  separator, so a symlink resolving to a sibling directory that shares the
+  repo's prefix (`/repo-evil` vs `/repo`) is rejected.
+- Package names are percent-encoded before going into registry URLs
+  (structural characters preserved for npm scopes, Go module paths, and
+  Maven `groupId:artifactId`).
+
+### Fixed
+
+- Interactive-CLI reports over-counted vulnerable dependencies. The
+  interactive summary counted every trivy finding as a dependency CVE,
+  including IaC misconfigurations, and omitted the misconfiguration line
+  entirely, so it disagreed with the auto/CI-mode summary for the same
+  repository. Both paths now compute identical counts.
+- The AI scanner now preflights the provider before sending any batch. A
+  retired model ID or revoked key previously failed inside every batch and
+  returned an empty findings list, which is indistinguishable from a clean
+  repository; it now stops with the explicit error naming the cause.
+- `run_tests.sh` runs the whole suite instead of a single file, matching
+  the CI gate (it silently skipped the two AI test modules).
+
 ### Changed
 
 - Anthropic is now the default AI provider: blank or unset `AI_PROVIDER`
@@ -18,6 +65,11 @@ semantic versioning.
   AI deep scan and all provider keys from CI, so the workflow makes no AI
   API calls and costs nothing. Rule-based scanners still run on every
   push and PR.
+- Future-proofing for long unattended periods: the Action now uses Node 22
+  (18 is EOL and current ESLint requires >= 20, which would have silently
+  dropped all JS/TS quality findings) and pins the pylint/eslint majors;
+  `ruff` and `mypy` gained upper bounds so a new lint rule in a minor
+  release cannot turn CI red with no code change.
 - Refreshed the OpenAI rows of `MODEL_PRICING` for the 2026-07-30 price
   cut (gpt-5.6-luna $0.20/$1.20, gpt-5.6-terra $2/$12 per 1M tokens), so
   printed cost estimates match current list prices.

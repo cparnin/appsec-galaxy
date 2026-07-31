@@ -13,8 +13,23 @@ import logging
 from typing import Any
 from dataclasses import dataclass
 from datetime import datetime, UTC
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
+
+
+def _url_safe_pkg(name: str) -> str:
+    """Percent-encode a package name for use in a registry URL path.
+
+    Package names come from manifests in the scanned repo (untrusted), so a
+    name containing '?', '#' or whitespace could otherwise change the shape
+    of the request (extra query parameters, fragment truncation) or poison
+    the response cache key. '/', '@', '.', '-', '_', '+' and ':' are
+    structural in real package names (npm scopes, Go module paths, Maven
+    groupId:artifactId) and are preserved. None of the preserved characters
+    can introduce a query parameter or fragment.
+    """
+    return quote(name, safe='/@.-_+:')
 
 try:
     import requests
@@ -151,7 +166,7 @@ class PackageRegistryClient:
         fetcher = fetchers.get(ecosystem)
         if fetcher is None:
             return None
-        return fetcher(name)
+        return fetcher(_url_safe_pkg(name))
 
     def _fetch_npm(self, name: str) -> dict[str, Any]:
         """Fetch npm registry metadata."""

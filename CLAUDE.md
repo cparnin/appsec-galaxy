@@ -267,6 +267,18 @@ a name-only grep when touching configuration.
 - Fake-secret fixtures need suppression in BOTH `.gitleaksignore`
   (fingerprints, for raw gitleaks) and `.appsec-galaxy-ignore` (app baseline).
 - Never log secret values anywhere, including examples and test fixtures.
+- Gitleaks secret values stop at the `Finding` boundary:
+  `Finding.from_gitleaks` strips `Secret`/`Match`, so no in-memory finding,
+  API response, report, or AI prompt carries a plaintext credential. The
+  verbatim value lives only in `outputs/<repo>/raw/` (gitignored). Do not
+  reintroduce those keys into the payload.
+- Web UI: build DOM with `createElement`/`textContent`, never by
+  concatenating scanner- or filesystem-derived values into markup, and
+  never with inline `on*` handlers. Every response carries a CSP and
+  frame/referrer/nosniff headers; a loopback bind rejects foreign `Host`
+  headers (DNS-rebinding guard).
+- Untrusted values reaching argv get `--` before positional arguments and
+  a leading-hyphen rejection at the validator (`go get`, `open`, pylint).
 
 ## Troubleshooting Quick Answers
 

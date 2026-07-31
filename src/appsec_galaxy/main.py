@@ -1650,7 +1650,13 @@ def main(argv: list[str] | None = None) -> None:
                         'high': len([f for f in security_findings if f.get('severity', '').lower() in ['high', 'error']]),
                         'sast': len([f for f in security_findings if f.get('tool') == 'semgrep']),
                         'secrets': len([f for f in security_findings if f.get('tool') == 'gitleaks']),
-                        'deps': len([f for f in security_findings if f.get('tool') == 'trivy'])
+                        # Trivy reports both dependency CVEs and IaC misconfigurations.
+                        # Excluding misconfigs here keeps 'deps' meaning "vulnerable
+                        # dependencies" and matches the auto/CI-mode summary exactly.
+                        'deps': len([f for f in security_findings if f.get('tool') == 'trivy'
+                                     and f.get('finding_type') != 'misconfiguration']),
+                        'misconfigs': len([f for f in security_findings
+                                           if f.get('finding_type') == 'misconfiguration'])
                     }
 
                     # Build security findings section
@@ -1659,7 +1665,8 @@ def main(argv: list[str] | None = None) -> None:
 • {summary_stats['high']} high-severity issues needing prompt remediation
 • {summary_stats['sast']} code security issues (SAST)
 • {summary_stats['secrets']} secrets detected in repository
-• {summary_stats['deps']} vulnerable dependencies identified"""
+• {summary_stats['deps']} vulnerable dependencies identified
+• {summary_stats['misconfigs']} IaC/config misconfigurations detected"""
 
                     # Add code quality section if present
                     code_quality_section = ""

@@ -110,7 +110,11 @@ def test_run_tests_uses_venv_python_module():
     checkout_root = Path(__file__).resolve().parent.parent
     script = (checkout_root / "run_tests.sh").read_text()
 
-    assert ".venv/bin/python -m pytest tests/test_appsec_galaxy.py -v" in script
+    # Must run the whole suite, not one file: naming test_appsec_galaxy.py
+    # silently skipped test_ai_provider.py and test_ai_consumers.py, so the
+    # local runner disagreed with the CI gate.
+    assert ".venv/bin/python -m pytest tests/ -v" in script
+    assert "tests/test_appsec_galaxy.py -v" not in script
 
 
 # ============================================================================
@@ -421,7 +425,12 @@ class TestSecretConfidence:
         assert results and 'confidence' in results[0]
         # fixture secret is sk-1234567890abcdef: sequential digits -> low
         assert results[0]['confidence'] == 'low'
-        assert results[0]['Secret'] not in results[0]['confidence_reason']
+        # The plaintext secret must not survive the Finding boundary: not in
+        # the payload, and not echoed back through the confidence reason.
+        fixture_secret = sample_gitleaks_output[0]['Secret']
+        assert 'Secret' not in results[0]
+        assert 'Match' not in results[0]
+        assert fixture_secret not in json.dumps(results[0])
 
     def test_html_sorts_low_confidence_last(self, tmp_path):
         from appsec_galaxy.reporting.html import generate_html_report
@@ -1376,6 +1385,53 @@ class TestRemediationPathConfinement:
         r = AutoRemediator.__new__(AutoRemediator)
         r._logged_unsupported_types = set()
         return r
+
+    def test_secure_file_path_rejects_sibling_prefix_directory(self, tmp_path):
+        """/repo-evil must not pass a boundary check for /repo.
+
+        A symlink inside the repo resolves out to a sibling whose path shares
+        the repo's string prefix, so the comparison has to be separator-aware
+        (str.startswith(repo) alone would accept it).
+        """
+        from appsec_galaxy.auto_remediation.remediation import _secure_file_path
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        sibling = tmp_path / 'repo-evil'
+        sibling.mkdir()
+        (sibling / 'app.py').write_text('x = 1\n')
+        # Symlink avoids the '..' filter and still resolves outside the repo.
+        (repo / 'link').symlink_to(sibling)
+
+        assert _secure_file_path(str(repo), 'link/app.py') is None
+        # A genuine in-repo file still resolves.
+        (repo / 'real.py').write_text('x = 1\n')
+        assert _secure_file_path(str(repo), 'real.py') is not None
+
+    def test_package_name_with_leading_hyphen_rejected(self):
+        """A package name from an untrusted manifest must never be parseable
+        as a command-line flag."""
+        from appsec_galaxy.auto_remediation.remediation import validate_package_name
+        assert validate_package_name('lodash') is True
+        assert validate_package_name('@scope/pkg') is True
+        assert validate_package_name('-insecure') is False
+        assert validate_package_name('--version') is False
+
+    def test_default_branch_falls_back_on_hostile_refname(self, tmp_path, monkeypatch):
+        """get_default_branch parses the scanned repo's own refs (untrusted)
+        and feeds the result to `git checkout`."""
+        import subprocess as sp
+        from appsec_galaxy.auto_remediation import remediation as rm
+
+        def fake_run(*args, **kwargs):
+            out = Mock()
+            out.stdout = 'refs/remotes/origin/--upload-pack=evil\n'
+            out.returncode = 0
+            return out
+
+        monkeypatch.setattr(sp, 'run', fake_run)
+        monkeypatch.setattr(rm.subprocess, 'run', fake_run)
+        r = self._remediator()
+        assert r.get_default_branch(str(tmp_path)) == 'main'
 
     def test_dependency_fix_rejects_traversal_path(self, tmp_path):
         repo = tmp_path / 'repo'
@@ -2905,6 +2961,8 @@ class TestAIScanCostCap:
         monkeypatch.setattr(ai_scanner, '_call_ai', fake_call)
         monkeypatch.setattr(ai_scanner, '_get_ai_client', lambda: object())
         monkeypatch.setattr(ai_scanner, '_estimate_scan_cost', lambda pricing: 99.0)
+        # Stub the provider preflight so fake_call counts batch calls only.
+        monkeypatch.setattr(ai_scanner, 'test_ai_connection', lambda: (True, 'stubbed'))
 
         with caplog.at_level('WARNING'):
             findings = ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path))
@@ -2912,6 +2970,41 @@ class TestAIScanCostCap:
         assert findings == []
         assert calls['n'] == 1, 'batches after the cap must not be sent'
         assert 'APPSEC_AI_SCAN_MAX_COST' in caplog.text
+
+    def test_unusable_provider_skips_before_any_batch(self, monkeypatch, tmp_path, caplog):
+        """A retired model ID or bad key must fail loudly before spending.
+
+        Regression test for the silent-zero failure mode: without a preflight,
+        every batch fails identically and the scan returns [], which is
+        indistinguishable from a genuinely clean repository.
+        """
+        from appsec_galaxy.scanners import ai_scanner
+        monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '3')
+        monkeypatch.delenv('APPSEC_AI_SCAN_MAX_COST', raising=False)
+        monkeypatch.delenv('APPSEC_DIFF_ONLY', raising=False)
+        (tmp_path / 'app.py').write_text('import os\nos.system(input())\n')
+
+        calls = {'n': 0}
+
+        def fake_call(client, model, sys_prompt, user_msg, max_tokens):
+            calls['n'] += 1
+            return '[]'
+
+        monkeypatch.setattr(ai_scanner, '_call_ai', fake_call)
+        monkeypatch.setattr(ai_scanner, '_get_ai_client', lambda: object())
+        monkeypatch.setattr(
+            ai_scanner, 'test_ai_connection',
+            lambda: (False, "openai does not recognize model 'gpt-retired'."),
+        )
+
+        with caplog.at_level('ERROR'):
+            findings = ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path))
+
+        assert findings == []
+        assert calls['n'] == 0, 'no batch may be sent when the provider is unusable'
+        # The operator must be able to tell "broken" from "clean".
+        assert 'does not recognize model' in caplog.text
 
     def test_config_rejects_negative_cap(self, monkeypatch):
         import pydantic
@@ -3484,6 +3577,31 @@ class TestWebAppSmoke:
         # Should be JSON
         assert response.is_json or response.content_type.startswith('application/json')
 
+    def test_security_headers_present_on_every_response(self, client):
+        """Baseline hardening headers, incl. a CSP: the report rendered from
+        hostile scanned repos is served from this same origin."""
+        response = client.get('/health')
+        assert response.headers['X-Content-Type-Options'] == 'nosniff'
+        assert response.headers['X-Frame-Options'] == 'DENY'
+        assert response.headers['Referrer-Policy'] == 'no-referrer'
+        csp = response.headers['Content-Security-Policy']
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_foreign_host_header_rejected_on_loopback_bind(self, client, monkeypatch):
+        """DNS-rebinding guard: an attacker domain resolving to 127.0.0.1 must
+        not be able to drive the API just because the bind is loopback."""
+        monkeypatch.setenv('HOST', '127.0.0.1')
+        assert client.get('/health', headers={'Host': 'evil.example.com'}).status_code == 400
+        # Legitimate loopback hosts still work.
+        assert client.get('/health', headers={'Host': 'localhost:8000'}).status_code == 200
+        assert client.get('/health', headers={'Host': '127.0.0.1:8000'}).status_code == 200
+
+    def test_foreign_host_allowed_when_bound_to_all_interfaces(self, client, monkeypatch):
+        """An intentional 0.0.0.0 deployment is reached by hostname by design."""
+        monkeypatch.setenv('HOST', '0.0.0.0')
+        assert client.get('/health', headers={'Host': 'scanner.internal'}).status_code == 200
+
     def test_config_endpoint_returns_json(self, client):
         response = client.get('/config')
         assert response.status_code == 200
@@ -3882,12 +4000,17 @@ class TestFinding:
         assert (f.tool, f.severity, f.path, f.line, f.message) == \
             ('semgrep', 'critical', 'a.py', 7, 'xss')
 
-    def test_from_gitleaks_preserves_raw_keys(self):
+    def test_from_gitleaks_preserves_raw_keys_but_strips_secret_value(self):
         from appsec_galaxy.finding import Finding
-        raw = {'Description': 'AWS key', 'File': 'config.py', 'StartLine': 3, 'Secret': 'AKIA...'}
+        raw = {'Description': 'AWS key', 'File': 'config.py', 'StartLine': 3,
+               'Secret': 'AKIA-fixture-value', 'Match': 'key = AKIA-fixture-value'}
         d = Finding.from_gitleaks(raw).to_dict()
-        for k in raw:
+        # Metadata keys survive; the plaintext credential does not.
+        for k in ('Description', 'File', 'StartLine'):
             assert d[k] == raw[k]
+        assert 'Secret' not in d
+        assert 'Match' not in d
+        assert 'AKIA-fixture-value' not in json.dumps(d)
         assert d['category'] == 'security'
         assert d['tool'] == 'gitleaks'
 
