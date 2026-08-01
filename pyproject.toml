@@ -36,7 +36,7 @@ dev = [
     # Upper bounds on the two CI-blocking linters: both add rules in minor
     # releases, so an unbounded range turns CI red with no code change.
     # Bump deliberately and fix the new findings in the same commit.
-    "ruff>=0.15.20,<0.16.0",
+    "ruff>=0.15.20,<0.17.0",
     "mypy>=2.1.0,<3.0.0",
 ]
 
