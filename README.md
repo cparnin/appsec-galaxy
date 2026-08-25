@@ -13,19 +13,17 @@ AI analysis (OpenAI or Anthropic) to map findings across files, identify attack
 chains, generate reports and SBOMs, and propose tightly constrained single-line
 remediations.
 
-**We dogfood it.** AppSec Galaxy scans its own code with the rule-based
+**It dogfoods itself.** AppSec Galaxy scans its own code with the rule-based
 scanners on every push and PR ([self-scan.yml](.github/workflows/self-scan.yml);
 no AI calls or API spend in CI); the Self-Scan badge above reflects the
-latest run. The same untrusted-input
-hardening it enforces on your repos (no lockfile scripts on hostile code, no
-auto-fix on untrusted PRs, allowlisted scan paths) it applies to itself.
+latest run.
 
 ## What it includes
 
 - Semgrep SAST, Gitleaks secret detection, and Trivy dependency plus IaC/config
   misconfiguration scanning (Terraform, CloudFormation, Kubernetes, Dockerfile).
 - Secret findings carry an offline confidence score (entropy + placeholder
-  heuristics) so test fixtures and template values sort below real credentials.
+  heuristics).
 - Language-specific code-quality adapters for common ecosystems.
 - Cross-file correlation, attack-chain analysis, trend history, diff scoping,
   and baseline suppression.
@@ -86,11 +84,9 @@ Or start the local web interface:
 
 ## AI provider configuration
 
-AppSec Galaxy supports `AI_PROVIDER=anthropic` (the default -- blank or unset
-values resolve to Anthropic) and `AI_PROVIDER=openai`. The interactive CLI
+AppSec Galaxy supports `AI_PROVIDER=anthropic` (default) and `AI_PROVIDER=openai`. The interactive CLI
 shows a provider picker whenever AI features are enabled, verifies the matching
-API key is set (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`), and runs a one-token
-test call so misconfiguration fails before a scan starts, with a clear message.
+API key is set, and runs a one-token test call so misconfiguration fails before a scan starts, with a clear message.
 
 The default scan-depth mapping per provider is:
 
@@ -172,7 +168,7 @@ filters fail open so configuration errors do not hide findings.
 
 ## MCP
 
-The FastMCP server supports ChatGPT desktop, Codex, and other MCP clients:
+The FastMCP server supports Claude Desktop & OpenAI Codex:
 
 ```toml
 [mcp_servers.appsec-galaxy]
