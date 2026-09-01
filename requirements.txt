@@ -10,8 +10,8 @@
 semgrep>=1.168.0,<2.0.0  # SAST scanner - allow 1.x updates, block 2.x
 
 # AI provider
-openai>=2.0.0,<3.0.0  # OpenAI Responses API client
-anthropic>=0.79.0,<1.0.0  # Anthropic Messages API client
+openai>=2.0.0,<4.0.0  # OpenAI Responses API client
+anthropic>=0.79.0,<2.0.0  # Anthropic Messages API client
 
 # Secure XML parsing (defends against XXE in scanned untrusted XML files).
 # AppSec Galaxy scans repositories that contain pom.xml / build configs / checkstyle
