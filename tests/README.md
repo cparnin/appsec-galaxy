@@ -1,9 +1,18 @@
 # AppSec Galaxy tests
 
-The suite covers scanner parsing and failure behavior, path and subprocess
-security, cross-file analysis, reporting, remediation safety, AI provider boundaries,
-MCP tools/resources, web smoke behavior, baselines, SARIF/SBOM metadata, and
-machine-facing configuration.
+One file per area of the system:
+
+| File | Covers |
+| --- | --- |
+| `test_scanners.py` | scanner adapters, parsing, the `Finding` shape, path/binary validation |
+| `test_dependency_analysis.py` | manifests, import resolution, registry lookups, CVE reachability |
+| `test_ai_analysis.py` | prompt-injection defenses, cross-file AI, summaries, privacy tiers, cost caps |
+| `test_ai_provider.py` | provider resolution, models, pricing, retries, token accounting |
+| `test_ai_consumers.py` | the modules that call the AI boundary, including remediation fixes |
+| `test_remediation.py` | auto-fix safety: protected files, sandboxing, confinement, fork-PR gate |
+| `test_pipeline_cli.py` | orchestration, `finalize_scan`, menus, baselines, diff scoping, history |
+| `test_reporting.py` | HTML report, SARIF, markdown, shared summary statistics |
+| `test_interfaces.py` | web API, MCP server, CI gate, machine-facing identity |
 
 ## Run the suite
 
@@ -22,9 +31,9 @@ every SDK/model boundary, so CI never makes a live model request.
 
 ```bash
 .venv/bin/python -m pytest tests/test_ai_provider.py -q
-.venv/bin/python -m pytest tests/test_ai_consumers.py -q
-.venv/bin/python -m pytest tests/test_appsec_galaxy.py -k MCP -q
-.venv/bin/python -m pytest tests/test_appsec_galaxy.py -k AppSecGalaxyIgnore -q
+.venv/bin/python -m pytest tests/test_scanners.py -q
+.venv/bin/python -m pytest tests/test_interfaces.py -k MCP -q
+.venv/bin/python -m pytest tests/ -k AppSecGalaxyIgnore -q
 ```
 
 ## Test rules

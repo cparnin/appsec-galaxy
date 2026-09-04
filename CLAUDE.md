@@ -88,7 +88,7 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~18,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (595 tests, ~7s). Personal project of cparnin; MIT licensed.
+suite (616 tests, ~4s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
@@ -194,8 +194,7 @@ mcp/appsec_galaxy_mcp_server.py   # FastMCP server + AppSecGalaxyMCPCore
 scripts/fail_on_critical.py       # CI gate
 configs/                          # bundled scanner configs (.gitleaks.toml etc.)
 clients/                          # drop-in workflow + SETUP.md
-tests/                            # test_appsec_galaxy.py, test_ai_provider.py,
-                                  # test_ai_consumers.py, conftest.py
+tests/                            # one file per area (see tests/README.md)
 outputs/                          # generated, gitignored, may contain secrets
 ```
 
@@ -209,7 +208,7 @@ PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -q
 
 # Focused tests while developing
 .venv/bin/python -m pytest tests/test_ai_provider.py -q
-.venv/bin/python -m pytest tests/test_appsec_galaxy.py -k "TestMachineFacingIdentity" -q
+.venv/bin/python -m pytest tests/test_interfaces.py -k "TestMachineFacingIdentity" -q
 
 # Setup / dependency changes
 python3.12 -m venv .venv && .venv/bin/pip install -e ".[web,dev]"

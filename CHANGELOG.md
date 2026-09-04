@@ -155,6 +155,26 @@ semantic versioning.
 - The exploit-intel cache moved out of a fixed shared temp path into the
   per-user cache directory.
 
+### Tests
+
+- The suite is split by area into `test_scanners.py`,
+  `test_dependency_analysis.py`, `test_ai_analysis.py`,
+  `test_remediation.py`, `test_pipeline_cli.py`, `test_reporting.py`, and
+  `test_interfaces.py` (the old 5,600-line `test_appsec_galaxy.py` is
+  gone); `tests/README.md` maps each file to what it covers.
+- Tests that asserted against logic pasted into the test file now drive
+  the real functions (`validate_attack_chains`,
+  `run_cross_file_pipeline`), and the AI-disabled and privacy-tier tests
+  fail loudly if a provider client is built instead of passing because no
+  key happens to be configured.
+- No test makes a network request (the dependency integration tests were
+  issuing registry lookups), `conftest.py` disables dotenv loading for the
+  whole session so a reimport cannot pull in real keys, the privacy-tier
+  picker test no longer leaks its env var, and 12 unused fixtures are gone.
+- New coverage for remediation safety gates (protected files, secret
+  findings, path confinement) and web security (API-key enforcement, the
+  report allowlist, directory-browsing policy).
+
 ### Documentation
 
 - Corrected every claim the audit found stale: max output tokens in
