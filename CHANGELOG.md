@@ -61,6 +61,13 @@ semantic versioning.
   repository; it now stops with the explicit error naming the cause.
 - `run_tests.sh` runs the whole suite instead of a single file, matching
   the CI gate (it silently skipped the two AI test modules).
+- The web server picks up a provider key rotated in `.env` without a
+  restart. It loaded `.env` once at startup, so replacing a revoked
+  `ANTHROPIC_API_KEY` kept failing the pre-scan connection test with
+  "rejected the API key" even though the new key was valid. `/scan` and
+  `/config` now re-read changed provider keys from `.env` (mtime-gated;
+  blank and placeholder values are ignored, and a shell-exported key still
+  wins until `.env` is edited) and drop the cached SDK client.
 
 ### Changed
 

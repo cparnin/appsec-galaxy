@@ -3671,6 +3671,52 @@ class TestWebAppSmoke:
         response = client.get('/this-route-does-not-exist-xyz')
         assert response.status_code == 404
 
+    def test_scan_uses_key_rotated_in_dotenv_after_server_start(self, client, monkeypatch, tmp_path):
+        """Regression: the server loaded .env once at startup, so replacing a
+        revoked ANTHROPIC_API_KEY in .env kept producing "rejected the API
+        key" until a restart. /scan must run its connection test with the
+        key currently in .env."""
+        import os
+        from appsec_galaxy.scanners import ai_scanner
+        env_file = tmp_path / '.env'
+        env_file.write_text('ANTHROPIC_API_KEY=sk-ant-rotated-key\n')
+        os.utime(env_file, (2_000, 2_000))
+        monkeypatch.setattr(ai_scanner, '_dotenv_path', lambda: env_file)
+        monkeypatch.setattr(ai_scanner, '_dotenv_seen_mtime', 1_000)
+        monkeypatch.setenv('ANTHROPIC_API_KEY', 'sk-ant-revoked-key')
+        monkeypatch.setenv('AI_PROVIDER', 'anthropic')
+        ai_scanner.reset_ai_client_cache()
+
+        seen: dict[str, str] = {}
+
+        def fake_connection_test():
+            seen['key'] = os.environ.get('ANTHROPIC_API_KEY', '')
+            return False, 'stop here: connection test recorded the key'
+
+        monkeypatch.setattr(ai_scanner, 'test_ai_connection', fake_connection_test)
+        response = client.post('/scan', json={
+            'repo_path': str(tmp_path), 'selected_tools': ['ai_scan'],
+        })
+        assert response.status_code == 400
+        assert 'stop here' in response.get_json()['error']
+        assert seen['key'] == 'sk-ant-rotated-key'
+
+    def test_config_reports_key_rotated_in_dotenv_after_server_start(self, client, monkeypatch, tmp_path):
+        """The provider dropdown's key status must reflect the current .env."""
+        import os
+        from appsec_galaxy.scanners import ai_scanner
+        env_file = tmp_path / '.env'
+        env_file.write_text('OPENAI_API_KEY=sk-openai-rotated-key\n')
+        os.utime(env_file, (2_000, 2_000))
+        monkeypatch.setattr(ai_scanner, '_dotenv_path', lambda: env_file)
+        monkeypatch.setattr(ai_scanner, '_dotenv_seen_mtime', 1_000)
+        monkeypatch.setenv('OPENAI_API_KEY', 'your-openai-api-key-here')
+
+        response = client.get('/config')
+        assert response.status_code == 200
+        providers = {p['name']: p for p in response.get_json()['ai_providers']}
+        assert providers['openai']['key_set'] is True
+
     def test_no_wildcard_cors_by_default(self, monkeypatch):
         """With no APPSEC_WEB_CORS_ORIGINS, responses must not carry
         Access-Control-Allow-Origin: * (a malicious site could otherwise

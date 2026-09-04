@@ -284,6 +284,60 @@ def reset_ai_client_cache() -> None:
     _ai_client_cache = None
 
 
+# Long-running processes (the web server) load .env once at import. A key
+# rotated in .env afterwards would keep failing with "rejected the API key"
+# until a restart, which reads as a broken app. Baseline on process start and
+# re-apply changed provider keys whenever .env is edited after that.
+# Only an edit to .env triggers a refresh, so a deliberate shell override
+# (`ANTHROPIC_API_KEY=... python -m appsec_galaxy.web_app`) still wins until
+# the user touches the file, which is the clearer signal of intent.
+_dotenv_seen_mtime: float = time.time()
+
+
+def _dotenv_path() -> Path:
+    from appsec_galaxy.project_paths import CHECKOUT_ROOT
+    return CHECKOUT_ROOT / '.env'
+
+
+def refresh_provider_keys_from_dotenv() -> list[str]:
+    """Re-read provider keys from .env if the file changed since last seen.
+
+    Returns the names of env vars that were updated (never their values).
+    Empty and env.example placeholder values are ignored, and a missing .env
+    is a no-op, so this can never make a working configuration worse.
+    """
+    global _dotenv_seen_mtime
+    path = _dotenv_path()
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    if mtime <= _dotenv_seen_mtime:
+        return []
+    _dotenv_seen_mtime = mtime
+
+    try:
+        from dotenv import dotenv_values
+        file_values = dotenv_values(path)
+    except Exception as exc:  # unreadable or malformed .env: keep running
+        logger.warning(f"Could not re-read .env for rotated keys: {exc.__class__.__name__}")
+        return []
+
+    updated: list[str] = []
+    for key_env in PROVIDER_KEY_ENV.values():
+        value = (file_values.get(key_env) or '').strip()
+        if not value or _PLACEHOLDER_KEY_RE.match(value):
+            continue
+        if os.environ.get(key_env, '').strip() == value:
+            continue
+        os.environ[key_env] = value
+        updated.append(key_env)
+    if updated:
+        reset_ai_client_cache()
+        logger.info(f"Reloaded {', '.join(updated)} from .env (file changed)")
+    return updated
+
+
 def _get_ai_client() -> _AIClient:
     """Build or reuse the process-wide provider SDK client."""
     global _ai_client_cache

@@ -187,9 +187,13 @@ def get_config():
     """Get current scanner configuration."""
     from appsec_galaxy.scanners.ai_scanner import (
         PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS, api_key_present, get_default_model,
+        refresh_provider_keys_from_dotenv,
     )
 
     try:
+        # Pick up keys rotated in .env since the server started, so the
+        # provider dropdown reports current key status.
+        refresh_provider_keys_from_dotenv()
         config = init_web_config()
         # Return safe config info (key presence only, never key values;
         # env.example placeholders count as unset)
@@ -273,7 +277,8 @@ def scan_repository():
         # way through a scan.
         from appsec_galaxy.scanners.ai_scanner import (
             DEFAULT_AI_PROVIDER, PROVIDER_KEY_ENV, SUPPORTED_PROVIDERS,
-            api_key_present, reset_ai_client_cache, test_ai_connection,
+            api_key_present, refresh_provider_keys_from_dotenv,
+            reset_ai_client_cache, test_ai_connection,
         )
 
         if requested_provider and requested_provider not in SUPPORTED_PROVIDERS:
@@ -322,6 +327,9 @@ def scan_repository():
         # working provider when AI will actually be used.
         ai_requested = 'ai_scan' in scanners_to_run or (auto_fix and active_tier == '3')
         if ai_requested:
+            # A key rotated in .env after server start must work without a
+            # restart; otherwise the old key keeps failing the check below.
+            refresh_provider_keys_from_dotenv()
             active_provider = (
                 os.getenv('AI_PROVIDER', '').strip().lower() or DEFAULT_AI_PROVIDER
             )

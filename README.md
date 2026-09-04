@@ -87,6 +87,7 @@ Or start the local web interface:
 AppSec Galaxy supports `AI_PROVIDER=anthropic` (default) and `AI_PROVIDER=openai`. The interactive CLI
 shows a provider picker whenever AI features are enabled, verifies the matching
 API key is set, and runs a one-token test call so misconfiguration fails before a scan starts, with a clear message.
+The web UI runs the same test at scan start and re-reads a key you rotate in `.env` without a server restart.
 
 The default scan-depth mapping per provider is:
 

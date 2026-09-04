@@ -587,3 +587,64 @@ def test_malformed_verification_response_preserves_original_findings(monkeypatch
     )
 
     assert result is original
+
+
+# ---------------------------------------------------------------------------
+# Rotated keys in .env are picked up without a process restart
+# ---------------------------------------------------------------------------
+
+def _write_env(path, key_env, value, when):
+    """Write .env with a single key and pin its mtime to `when`."""
+    import os as _os
+    path.write_text(f"{key_env}={value}\n")
+    _os.utime(path, (when, when))
+
+
+def test_rotated_key_in_dotenv_is_applied_and_client_cache_dropped(tmp_path, monkeypatch):
+    """Regression: the web server loads .env once at import, so a key rotated
+    afterwards kept failing with "rejected the API key" until a restart."""
+    env_file = tmp_path / ".env"
+    _write_env(env_file, "ANTHROPIC_API_KEY", "sk-ant-new-key", when=2_000)
+    monkeypatch.setattr(ai_scanner, "_dotenv_path", lambda: env_file)
+    monkeypatch.setattr(ai_scanner, "_dotenv_seen_mtime", 1_000)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-old-key")
+    ai_scanner._ai_client_cache = ai_scanner._AIClient("anthropic", Mock())
+
+    assert ai_scanner.refresh_provider_keys_from_dotenv() == ["ANTHROPIC_API_KEY"]
+    assert ai_scanner.os.environ["ANTHROPIC_API_KEY"] == "sk-ant-new-key"
+    assert ai_scanner._ai_client_cache is None, "stale client would still hold the old key"
+    # Second call with no further edit is a no-op.
+    assert ai_scanner.refresh_provider_keys_from_dotenv() == []
+
+
+def test_unchanged_dotenv_does_not_override_shell_key(tmp_path, monkeypatch):
+    """A deliberate shell override must survive until the user edits .env."""
+    env_file = tmp_path / ".env"
+    _write_env(env_file, "ANTHROPIC_API_KEY", "sk-ant-file-key", when=1_000)
+    monkeypatch.setattr(ai_scanner, "_dotenv_path", lambda: env_file)
+    monkeypatch.setattr(ai_scanner, "_dotenv_seen_mtime", 1_500)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-shell-key")
+    cached = ai_scanner._AIClient("anthropic", Mock())
+    ai_scanner._ai_client_cache = cached
+
+    assert ai_scanner.refresh_provider_keys_from_dotenv() == []
+    assert ai_scanner.os.environ["ANTHROPIC_API_KEY"] == "sk-ant-shell-key"
+    assert ai_scanner._ai_client_cache is cached
+
+
+@pytest.mark.parametrize("file_value", ["", "   ", "your-anthropic-api-key-here"])
+def test_placeholder_or_blank_dotenv_key_never_clobbers_a_real_one(tmp_path, monkeypatch, file_value):
+    env_file = tmp_path / ".env"
+    _write_env(env_file, "ANTHROPIC_API_KEY", file_value, when=2_000)
+    monkeypatch.setattr(ai_scanner, "_dotenv_path", lambda: env_file)
+    monkeypatch.setattr(ai_scanner, "_dotenv_seen_mtime", 1_000)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-key")
+
+    assert ai_scanner.refresh_provider_keys_from_dotenv() == []
+    assert ai_scanner.os.environ["ANTHROPIC_API_KEY"] == "sk-ant-real-key"
+
+
+def test_missing_dotenv_is_a_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_scanner, "_dotenv_path", lambda: tmp_path / "absent.env")
+    monkeypatch.setattr(ai_scanner, "_dotenv_seen_mtime", 0)
+    assert ai_scanner.refresh_provider_keys_from_dotenv() == []

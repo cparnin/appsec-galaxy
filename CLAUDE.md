@@ -88,7 +88,7 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (510 tests, ~7s). Personal project of cparnin; MIT licensed.
+suite (526 tests, ~7s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
@@ -288,7 +288,10 @@ scanner output in `outputs/<repo>/raw/`.
 **"AI feature unavailable / key error?"** The error names the exact env var
 (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) for the active provider. The CLI
 picker and web scan run a one-token connection test that classifies bad key
-vs unknown model vs network before any scan spend.
+vs unknown model vs network before any scan spend. A key rotated in `.env`
+while the web server is running takes effect on the next `/scan` or
+`/config` (`refresh_provider_keys_from_dotenv()` in ai_scanner.py re-reads
+changed keys and drops the cached client); no restart needed.
 
 **"Auto-fix not creating PRs?"** `GITHUB_TOKEN` with repo scope; in Actions,
 `contents: write` + `pull-requests: write` permissions.
