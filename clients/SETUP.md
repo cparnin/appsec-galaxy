@@ -44,7 +44,12 @@ with:
   anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # or openai-api-key with ai-provider: openai
   # scan-level: 'critical-high'  # default; 'all' includes medium and low
   # auto-fix: 'true'             # default; opens fix PRs on pushes and same-repo PRs
-  # auto-fix-mode: '3'           # 1=SAST, 2=deps, 3=both (unset = decided by findings)
+  # auto-fix-mode: '3'           # 1=SAST+secrets, 2=dependencies, 3=both, 4=skip
+                               # (unset = chosen from what the scan found)
+  # ai-scan: 'true'            # AI deep analysis (default false; needs an API key)
+  # ai-scan-depth: 'standard'  # quick, standard, or deep
+  # ai-scan-tier: '3'          # 1 no AI calls, 2 metadata only, 3 full source
+  # ai-scan-max-cost: '1.00'   # hard USD ceiling per run
   # fail-on-critical: 'false'    # default; 'true' fails the build on critical findings
 
 # Note: Code quality findings are ALWAYS shown regardless of scan-level

@@ -25,7 +25,9 @@ the working rules live in `CLAUDE.md` and `AGENTS.md`.
 
 ## Tier 3: polish
 
-- **AI scan file selection prefers entry points** over a flat top-N list.
+- **AI scan file selection is relevance-ranked** by security keywords in
+  the path (auth, input handling, database, crypto) before the file cap
+  applies, so the budget goes to the files most likely to matter.
 - **Pinned Semgrep rulesets** (`APPSEC_SEMGREP_CONFIG`, default
   `p/default`); `auto` restores dynamic per-repo selection.
 

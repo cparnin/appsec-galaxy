@@ -9,34 +9,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 AppSec Galaxy combines rule-based application security scanners with optional
-AI analysis (OpenAI or Anthropic) to map findings across files, identify attack
+AI analysis (Anthropic or OpenAI) to map findings across files, identify attack
 chains, generate reports and SBOMs, and propose tightly constrained single-line
 remediations.
-
-**It dogfoods itself.** AppSec Galaxy scans its own code with the rule-based
-scanners on every push and PR ([self-scan.yml](.github/workflows/self-scan.yml);
-no AI calls or API spend in CI); the Self-Scan badge above reflects the
-latest run.
-
-## What it includes
-
-- Semgrep SAST, Gitleaks secret detection, and Trivy dependency plus IaC/config
-  misconfiguration scanning (Terraform, CloudFormation, Kubernetes, Dockerfile).
-- Secret findings carry an offline confidence score (entropy + placeholder
-  heuristics).
-- Language-specific code-quality adapters for common ecosystems.
-- Cross-file correlation, attack-chain analysis, trend history, diff scoping,
-  and baseline suppression.
-- Dependency CVEs ranked by real risk: EPSS exploit probability and CISA KEV
-  membership combined with code reachability (a CVE in a dep your code never
-  imports is de-escalated; an exploited CVE in a dep you actually call rises
-  to the top).
-- Optional AI-native analysis: OpenAI (Responses API) or Anthropic (Messages API).
-- HTML and SARIF reports plus CycloneDX and SPDX SBOM output. SARIF carries
-  GitHub Code Scanning severity ranking and cross-run alert fingerprints.
-- CLI, local web interface, GitHub Action, and a 16-tool FastMCP server.
-
-AI is opt-in. Rule-based scanning works without any AI key.
 
 ## Quick start
 
@@ -76,11 +51,39 @@ Start the CLI:
 .venv/bin/appsec-galaxy
 ```
 
+It walks you through it: pick a repository, pick which scanners to run, pick a
+severity level (and an AI provider and privacy tier if AI is on), then it
+scans and writes an HTML report you can open.
+
 Or start the local web interface:
 
 ```bash
 ./start_web.sh
 ```
+
+## What it includes
+
+- Semgrep SAST, Gitleaks secret detection, and Trivy dependency plus IaC/config
+  misconfiguration scanning (Terraform, CloudFormation, Kubernetes, Dockerfile).
+- Secret findings carry an offline confidence score (entropy + placeholder
+  heuristics).
+- Six code-quality linters: ESLint (JavaScript and TypeScript), Pylint,
+  Checkstyle (Java), golangci-lint (Go), RuboCop, and SwiftLint.
+- Cross-file correlation, attack-chain analysis, trend history, diff scoping,
+  and baseline suppression.
+- Dependency CVEs ranked by real risk: EPSS exploit probability and CISA KEV
+  membership combined with code reachability (a CVE in a dep your code never
+  imports is de-escalated; an exploited CVE in a dep you actually call rises
+  to the top).
+- Optional AI-native analysis: Anthropic (Messages API) or OpenAI (Responses API).
+- HTML and SARIF reports plus CycloneDX and SPDX SBOM output. SARIF carries
+  GitHub Code Scanning severity ranking and cross-run alert fingerprints.
+- CLI, local web interface, GitHub Action, and a 16-tool FastMCP server.
+
+AI is opt-in. Rule-based scanning works without any AI key.
+
+Findings that span files are traced into attack chains, from the entry point
+that takes user input to the sink that uses it.
 
 ## AI provider configuration
 
@@ -103,8 +106,7 @@ enrichment fails.
 
 ### What data reaches the AI provider
 
-AI is off by default (`APPSEC_AI_SCAN=false`). Once enabled,
-`APPSEC_AI_SCAN_TIER` controls exposure:
+Once AI is enabled, `APPSEC_AI_SCAN_TIER` controls exposure:
 
 | Tier | What leaves your machine |
 | --- | --- |
@@ -121,17 +123,23 @@ findings are summarized by type only. Set the tier per run in the CLI picker
 or the web UI's AI Data Privacy dropdown, per repository with the Action's
 `ai-scan-tier` input, or persistently via `APPSEC_AI_SCAN_TIER` in `.env`.
 
-Semgrep, Gitleaks, and Trivy analyze code locally. Some enrichment still makes
-outbound calls with non-source data: EPSS/CISA-KEV lookups send CVE IDs
-(`APPSEC_VULN_INTEL=false` to disable), dependency health sends package names
-(`APPSEC_DEP_HEALTH_CHECK=false`), and Semgrep downloads its pinned rulesets
-(`p/default`; override with `APPSEC_SEMGREP_CONFIG`) from the registry.
-
 AI spend is visible and cappable: every scan prints token usage and estimated
 USD, and `APPSEC_AI_SCAN_MAX_COST` (or the Action's `ai-scan-max-cost` input)
 is a hard ceiling; the scan stops issuing AI calls once it is reached. With
 `APPSEC_DIFF_ONLY=true`, the AI scanner analyzes only the files changed vs the
 base ref, which makes per-PR AI scans cost cents instead of a full-repo pass.
+
+## Network calls
+
+Your source code never leaves the machine unless you turn on AI analysis.
+Semgrep, Gitleaks, and Trivy all run locally. Three features do make outbound
+calls, none of them carrying source:
+
+| Feature | What it sends | Turn it off with |
+| --- | --- | --- |
+| Exploit intelligence (EPSS, CISA KEV) | CVE IDs | `APPSEC_VULN_INTEL=false` |
+| Dependency health | package names | `APPSEC_DEP_HEALTH_CHECK=false` |
+| Semgrep rulesets | nothing; downloads `p/default` | `APPSEC_SEMGREP_CONFIG` (a local path) |
 
 ## Outputs
 
@@ -167,7 +175,7 @@ Set `APPSEC_DIFF_ONLY=true` to keep findings only in files changed from
 The AI scanner honors the same scope, analyzing only changed files. Both
 filters fail open so configuration errors do not hide findings.
 
-## MCP
+## MCP server (use it from an AI client)
 
 The FastMCP server works with any MCP client (Codex, Claude Desktop, ChatGPT desktop):
 
@@ -199,7 +207,12 @@ PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -q
 
 Architecture and security invariants are documented in
 [ARCHITECTURE.md](ARCHITECTURE.md). Contributor and agent rules are in
-[AGENTS.md](AGENTS.md).
+[AGENTS.md](AGENTS.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
+
+AppSec Galaxy scans its own code with the rule-based scanners on every push
+and pull request to `main` ([self-scan.yml](.github/workflows/self-scan.yml)),
+with no AI calls or API spend in CI. The Self-Scan badge at the top reflects
+the latest run.
 
 ## License
 

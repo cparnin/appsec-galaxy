@@ -35,6 +35,8 @@ src/appsec_galaxy/
 ├── main.py                  # CLI, scan orchestration, finalize_scan pipeline
 ├── web_app.py               # local Flask interface
 ├── config.py                # constants + pydantic-settings validation
+├── exceptions.py            # typed scanner/analysis errors
+├── logging_config.py        # logger setup and levels
 ├── finding.py               # canonical Finding dataclass (scanner boundary)
 ├── scanners/                # security and quality scanner adapters
 ├── ai_cross_file.py         # optional semantic cross-file enrichment
@@ -50,7 +52,8 @@ src/appsec_galaxy/
 ├── scan_history.py          # trend history (new vs fixed per scan)
 ├── path_utils.py            # repository output paths and retention
 ├── project_paths.py         # checkout resource locations
-└── templates/index.html     # web UI (single file)
+├── templates/index.html     # web UI (single file)
+└── __main__.py              # `python -m appsec_galaxy` entry point
 ```
 
 Scanner configuration lives under `configs/`. The MCP server, CI gates, and

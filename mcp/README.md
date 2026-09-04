@@ -31,6 +31,16 @@ export GITHUB_TOKEN="your-github-token-here"            # required only for PR c
 Do not put credentials in MCP client configuration. Importing and initializing
 the server does not construct a provider client or require a key.
 
+The server will only scan repositories under `~/repos` and `~/projects`. To
+allow other locations, set `APPSEC_MCP_ALLOWED_ROOTS` to a colon-separated
+list; it replaces the defaults rather than adding to them, and anything
+outside it is refused (the home directory and the server's working directory
+are deliberately not allowed roots).
+
+```bash
+export APPSEC_MCP_ALLOWED_ROOTS="$HOME/code:$HOME/work"
+```
+
 ## Codex configuration
 
 Create `.codex/config.toml` (git-ignored) with:
@@ -109,7 +119,7 @@ Claude Desktop can use the same stdio JSON configuration shown above.
 | --- | --- |
 | Server cannot find the installation | Set `APPSEC_GALAXY_PATH` or launch from the checkout |
 | No tools appear | Confirm absolute paths, JSON/TOML syntax, and restart the client |
-| Repository not found | Pass an absolute path or set `REPO_SEARCH_PATHS` |
+| Repository not found, or "outside the allowed scan roots" | The server only scans under `~/repos` and `~/projects` by default. Set `APPSEC_MCP_ALLOWED_ROOTS` (colon-separated) to allow other locations; it replaces the defaults entirely |
 | AI feature unavailable | Export a valid `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` with `AI_PROVIDER=openai`) in the server process |
 | PR creation unavailable | Export `GITHUB_TOKEN` with repository permissions |
 | Scanner missing | Install the external binary and confirm it is on `PATH` |

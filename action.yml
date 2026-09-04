@@ -58,7 +58,7 @@ inputs:
     required: false
     default: '3'
   ai-scan-max-cost:
-    description: 'Hard USD ceiling for the AI scanner phase (e.g. "1.00"); the scan stops issuing AI calls at the cap. Empty = no cap.'
+    description: 'Hard USD ceiling for every AI call in the run (scanner, cross-file, auto-fix) (e.g. "1.00"); the scan stops issuing AI calls at the cap. Empty = no cap.'
     required: false
     default: ''
 

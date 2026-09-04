@@ -72,7 +72,7 @@ other nonblank value is a configuration error. The provider's API key
 (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) is required only when AI scanning or
 automated remediation is enabled.
 
-All model calls go through `scanners/ai_scanner.py` -- the OpenAI Responses
+All model calls go through `scanners/ai_scanner.py`: the OpenAI Responses
 API or the Anthropic Messages API depending on `AI_PROVIDER`. Keep stable
 instructions separate from dynamic/untrusted input. Mock the client and call
 boundary in tests; never make a live model request in CI.
@@ -85,7 +85,7 @@ source of truth for models and prices; keep the README table, `env.example`,
 
 The server name is `appsec-galaxy`, exports 16 generic tools, and exposes four
 `appsec-galaxy://` resource templates. Importing and initializing the MCP core
-must not construct an OpenAI client or require an API key. Keep secrets in the
+must not construct a provider client or require an API key. Keep secrets in the
 server process environment, never in `.codex/config.toml` or client JSON.
 
 ## Documentation and changelog
@@ -99,8 +99,8 @@ server process environment, never in `.codex/config.toml` or client JSON.
 
 ## Release and Git rules
 
-- Keep `pyproject.toml`, package `__version__`, SBOM metadata, action examples,
-  and release notes aligned.
+- Keep `pyproject.toml`, package `__version__`, the pinned `uses:` in
+  `clients/security-scan.yml`, and release notes aligned.
 - Regenerate `requirements.lock` from `pyproject.toml` with all extras; do not
   hand-edit a resolved lock.
 - Preserve unrelated user changes and never use destructive Git commands.

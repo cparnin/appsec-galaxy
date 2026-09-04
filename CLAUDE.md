@@ -248,8 +248,10 @@ loudly on bad values. Key groups:
 - MCP: `APPSEC_GALAXY_PATH`, `APPSEC_MCP_ALLOWED_ROOTS` (scan-target
   allowlist), `MCP_SCAN_TIMEOUT`, `MCP_REMEDIATE_TIMEOUT`
 
-Every env var the code reads must appear in `env.example` or
-`mcp/mcp_env.example`; every documented var must be read by code. Audit with
+Every user-facing env var the code reads must appear in `env.example` or
+`mcp/mcp_env.example`, and every documented var must be read by code.
+Internal process markers (`APPSEC_WEB_MODE`) and CI-provided variables
+(`GITHUB_*`) are deliberately undocumented; comment them at the read site. Audit with
 a name-only grep when touching configuration.
 
 ## Security Invariants (summary; canonical list in ARCHITECTURE.md)
