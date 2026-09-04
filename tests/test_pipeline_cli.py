@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 import sys
+import tomllib
 
 
 
@@ -709,10 +710,14 @@ class TestOutputRetention:
         assert not stale_sibling.exists()
 
 def test_distribution_namespace_imports():
+    """The package version must match pyproject (asserting a literal here
+    would just mean editing this test on every release)."""
     import appsec_galaxy
 
+    project = tomllib.loads(
+        (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
     assert appsec_galaxy.__product_name__ == "AppSec Galaxy"
-    assert appsec_galaxy.__version__ == "2.6.3"
+    assert appsec_galaxy.__version__ == project["project"]["version"]
 
 def test_cli_help_exits_without_starting_scan(monkeypatch, capsys):
     from appsec_galaxy import main

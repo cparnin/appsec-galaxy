@@ -5,6 +5,16 @@ semantic versioning.
 
 ## Unreleased
 
+## [2.7.0] - 2026-09-04
+
+A full review of the application: six parallel reviews (core orchestration,
+scanners and reporting, the AI boundary and remediation, MCP and CI, docs,
+tests), then every verified finding fixed with a regression test. The
+headline results: gitleaks no longer reports a clean scan on a non-git
+directory, three code-quality linters that could never return a finding
+were fixed or removed, the GitHub Action no longer crashes on its own
+default input, and the executive summary's numbers agree with each other.
+
 ### Security
 
 - MCP scans run the scanner with Python's safe-path flag (`-P`). `python -m`
