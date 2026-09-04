@@ -79,7 +79,7 @@ from appsec_galaxy.scanners.trivy import run_trivy_scan         # Software Compo
 from appsec_galaxy.scanners.validation import detect_languages  # Language detection for code quality linters
 from appsec_galaxy.scanners.ai_scanner import run_ai_scan       # AI-native vulnerability detection
 from appsec_galaxy.reporting.html import generate_html_report  # Pretty HTML reports for detailed review
-from appsec_galaxy.reporting.ai_summary import build_fallback_summary
+from appsec_galaxy.reporting.ai_summary import build_fallback_summary, compute_summary_stats
 
 # Import code quality linters (graceful fallback if not installed)
 try:
@@ -1205,8 +1205,10 @@ def select_privacy_tier() -> int:
 def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], auto_choice: int | None = None) -> dict:
     """Handle auto-remediation flow for findings"""
     total_findings = len(all_findings)
-    critical_findings = len([f for f in all_findings if f.get('severity', '').lower() in ['critical']])
-    high_findings = len([f for f in all_findings if f.get('severity', '').lower() in ['high', 'error']])
+    # Security findings only, same formula as the report tiles.
+    stats = compute_summary_stats(all_findings)
+    critical_findings = stats['critical']
+    high_findings = stats['high']
 
     print("\n📊 Scan Results:")
     print(f"   • Total findings: {total_findings}")

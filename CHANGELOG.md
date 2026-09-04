@@ -59,6 +59,9 @@ semantic versioning.
   retired model ID or revoked key previously failed inside every batch and
   returned an empty findings list, which is indistinguishable from a clean
   repository; it now stops with the explicit error naming the cause.
+- The dependency-pin test asserts the shape of the `openai` constraint
+  (floor and ceiling) instead of the exact string, so Dependabot's
+  ceiling bump (#7) no longer fails the suite.
 - `run_tests.sh` runs the whole suite instead of a single file, matching
   the CI gate (it silently skipped the two AI test modules).
 - Gitleaks no longer reports every SHA-1 hash as a Sourcegraph token. The
@@ -77,7 +80,8 @@ semantic versioning.
   line). `compute_summary_stats()` / `risk_assessment()` /
   `build_fallback_summary()` in `reporting/ai_summary.py` are now the one
   source for the tiles, the badge, and the fallback summary text, which
-  was previously pasted into `main.py` twice and `web_app.py` once.
+  was previously pasted into `main.py` twice and `web_app.py` once; the
+  web result cards (`scan_summary`) and the CLI results print use it too.
   Critical/High count security findings only; any critical finding or
   any detected secret is High Risk, any high finding is Medium.
 - The web server picks up a provider key rotated in `.env` without a

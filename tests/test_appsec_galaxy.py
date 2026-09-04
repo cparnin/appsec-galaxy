@@ -5184,6 +5184,35 @@ class TestSummaryStats:
         assert 'CONTEXT-MARKER' in text
         assert 'Low Risk' in text
 
+    def test_web_scan_response_counts_security_only(self, monkeypatch, tmp_path):
+        """The web result cards read scan_summary.high_findings; they must
+        match the report tiles (a pylint error is not a high security issue)."""
+        import sys
+        if 'appsec_galaxy.web_app' in sys.modules:
+            del sys.modules['appsec_galaxy.web_app']
+        from appsec_galaxy import web_app
+        findings = [
+            {'tool': 'semgrep', 'check_id': 'x', 'path': 'a.py', 'severity': 'high',
+             'start': {'line': 1}, 'extra': {'message': 'x'}, 'category': 'security'},
+            {'tool': 'pylint', 'check_id': 'E1', 'path': 'b.py', 'severity': 'high',
+             'start': {'line': 1}, 'extra': {'message': 'bug', 'severity': 'error',
+                                             'metadata': {'category': 'code_quality'}},
+             'category': 'code_quality'},
+        ]
+        monkeypatch.setattr(web_app, 'run_security_scans', lambda *a, **k: findings)
+        monkeypatch.setattr(web_app, 'track_usage', lambda: None)
+        monkeypatch.setattr(web_app, 'generate_html_report', lambda *a, **k: None)
+        monkeypatch.setattr(web_app, 'CROSS_FILE_AVAILABLE', False, raising=False)
+        web_app.app.config['TESTING'] = True
+        resp = web_app.app.test_client().post('/scan', json={
+            'repo_path': str(tmp_path), 'selected_tools': ['semgrep', 'code_quality'],
+        })
+        assert resp.status_code == 200, resp.get_json()
+        summary = resp.get_json()['scan_summary']
+        assert summary['total_findings'] == 2
+        assert summary['high_findings'] == 1
+        assert summary['critical_findings'] == 0
+
     def test_no_inline_copies_of_the_fallback_summary_remain(self):
         """The summary text used to be pasted into main.py twice and web_app.py
         once, each with its own risk formula. Only ai_summary.py may own it."""

@@ -8,6 +8,7 @@ manifest/example contracts.
 
 from pathlib import Path
 from types import SimpleNamespace
+import re
 import tomllib
 
 import pytest
@@ -566,8 +567,10 @@ def test_dependencies_and_examples_cover_both_providers():
         ]
     )
 
-    assert "openai>=2.0.0,<3.0.0" in dependencies
-    assert "openai>=2.0.0,<3.0.0" in requirements
+    # Shape only (a floor and a ceiling), so Dependabot can raise the
+    # ceiling without breaking this test.
+    assert any(re.fullmatch(r"openai>=2\.\d+\.\d+,<\d+\.0\.0", dep) for dep in dependencies)
+    assert re.search(r"^openai>=2\.\d+\.\d+,<\d+\.0\.0", requirements, re.M)
     assert any(dep.startswith("anthropic>=") for dep in dependencies)
     assert "anthropic>=" in requirements
     assert "OPENAI_API_KEY=" in examples

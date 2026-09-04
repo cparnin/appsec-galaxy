@@ -33,7 +33,7 @@ from appsec_galaxy.main import (
     track_usage
 )
 from appsec_galaxy.reporting.html import generate_html_report
-from appsec_galaxy.reporting.ai_summary import build_fallback_summary
+from appsec_galaxy.reporting.ai_summary import build_fallback_summary, compute_summary_stats
 
 # Import path utilities for multi-repo output structure
 from appsec_galaxy.path_utils import (
@@ -502,14 +502,17 @@ def scan_repository():
             import time
             scan_id = f"{Path(validated_path).name}_{int(time.time())}"
 
+            # Same counting as the HTML report tiles (security findings only)
+            # so the web cards never disagree with the report they link to.
+            response_stats = compute_summary_stats(all_findings)
             response = {
                 'success': True,
                 'scan_id': scan_id,  # Add unique scan ID for cache-busting
                 'scan_timestamp': int(time.time()),  # Add timestamp
                 'scan_summary': {
                     'total_findings': len(all_findings),
-                    'critical_findings': len([f for f in all_findings if f.get('severity') == 'critical']),
-                    'high_findings': len([f for f in all_findings if f.get('severity') == 'high']),
+                    'critical_findings': response_stats['critical'],
+                    'high_findings': response_stats['high'],
                     'repository_path': str(validated_path),
                     'repository_name': Path(validated_path).name,  # Add repo name
                     'scan_level': scan_level,
