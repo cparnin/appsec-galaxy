@@ -56,23 +56,6 @@ def _run_trivy_scan(repo_path: str, output_file: Path, scan_level: str = "critic
         if not repo_path_obj:
             return False
 
-        # Check what dependency files exist to provide better feedback
-        dep_files = []
-        dep_patterns = [
-            "package.json", "package-lock.json", "yarn.lock",
-            "requirements.txt", "Pipfile", "Pipfile.lock", "pyproject.toml",
-            "go.mod", "go.sum", "Cargo.toml", "Cargo.lock",
-            "composer.json", "composer.lock", "pom.xml", "build.gradle"
-        ]
-
-        for pattern in dep_patterns:
-            matches = list(repo_path_obj.rglob(pattern))
-            dep_files.extend(matches)
-
-        if dep_files:
-            logger.debug(f"Found dependency files: {[f.name for f in dep_files[:5]]}")
-        else:
-            logger.debug("No common dependency files found - scanning filesystem anyway")
 
         # Get and validate Trivy binary path
         trivy_bin = validate_binary_path('TRIVY_BIN', 'trivy')
@@ -154,7 +137,14 @@ def _run_trivy_scan(repo_path: str, output_file: Path, scan_level: str = "critic
                         if tmp_out.exists():
                             with open(tmp_out, encoding='utf-8') as f:
                                 vendor_data = json.load(f)
-                            extra_results.extend(vendor_data.get('Results', []))
+                            for r in vendor_data.get('Results', []):
+                                # Trivy's Target is relative to the scanned
+                                # dir; re-root it so paths stay repo-relative
+                                # (baseline globs, diff scoping, SARIF, history).
+                                target = str(r.get('Target', '') or '')
+                                if target and not target.startswith(f"{vdir}/"):
+                                    r['Target'] = f"{vdir}/{target}"
+                                extra_results.append(r)
                             tmp_out.unlink()
                     if extra_results:
                         root_data['Results'] = root_results + extra_results
@@ -185,18 +175,20 @@ def _parse_trivy_results(output_file: Path, repo_path: str) -> list[dict[str, An
             logger.info("Trivy found no vulnerabilities (no output file)")
             return []
 
-        # Check for dependency files to provide context
+        # Dependency manifests present (one shallow walk, skipping vendored
+        # trees) so the "nothing to scan" message can name what was seen.
         repo_path_obj = Path(repo_path)
-        dep_patterns = [
+        dep_names = {
             "package.json", "package-lock.json", "yarn.lock",
             "requirements.txt", "Pipfile", "Pipfile.lock", "pyproject.toml",
             "go.mod", "go.sum", "Cargo.toml", "Cargo.lock",
-            "composer.json", "composer.lock", "pom.xml", "build.gradle"
+            "composer.json", "composer.lock", "pom.xml", "build.gradle",
+        }
+        skip_dirs = {'node_modules', 'vendor', '.git', '.venv', 'venv', 'dist', 'build'}
+        dep_files = [
+            f for f in repo_path_obj.rglob('*')
+            if f.name in dep_names and not any(part in skip_dirs for part in f.relative_to(repo_path_obj).parts[:-1])
         ]
-        dep_files = []
-        for pattern in dep_patterns:
-            matches = list(repo_path_obj.rglob(pattern))
-            dep_files.extend(matches)
 
         with open(output_file, encoding='utf-8') as f:
             data = json.load(f)

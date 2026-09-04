@@ -101,8 +101,65 @@ semantic versioning.
   $150). `REPO_SEARCH_PATHS` is colon-separated in every mode (the web UI
   split on commas, the CLI and MCP on colons).
 
+- Cross-file attack chains were fabricated. Import resolution matched
+  `module in absolute_path`, so `import os` wired a file to anything under
+  a checkout path containing "os" (every path under `~/repos`, for
+  instance), and the AI layer then paid to validate the phantom chains.
+  Modules now resolve to an exact file (relative, dotted, and path-style
+  imports, including Python's `from . import x`), the analyzer keys
+  everything by repo-relative path, and directory pruning matches
+  directory names instead of path substrings (a checkout under
+  `.../devenv/...` used to analyze zero files).
+- Finding-to-chain correlation goes through one `to_repo_relative()`
+  helper, so a semgrep finding (absolute path) and an AI finding
+  (relative) match the same chain. The cross-file path normalizer no
+  longer uses `lstrip('./')`, which turned `.env` into `env` and
+  `.github/x` into `github/x`.
+- One malformed AI finding no longer discards the whole scan. Model output
+  is coerced before use (`"42"` for a line, `"high"` for a confidence,
+  `null` for a type), so a single bad field cannot raise past the batch.
+- The verification pass matches confirmed findings by id instead of an
+  exact (file, line, type) tuple the model re-types; a reply saying
+  `"./app.py"`, `"42"`, or `"sql injection"` used to drop a confirmed
+  finding as a false positive.
+- AI-versus-semgrep deduplication works at all: both sides are normalized
+  to repo-relative paths and bare CWE ids first (semgrep emits absolute
+  paths and "CWE-89: Improper ..." strings).
+- Preflight probes the model the scan will actually use; it probed the
+  cheapest model, so a retired standard or deep model passed preflight and
+  every batch then failed, which reads as a clean repository.
+- Anthropic token accounting: `usage.input_tokens` excludes cache reads
+  and writes, so cached calls were under-billed (the discount was applied
+  twice) and cache writes were never charged. Both are now recorded, and
+  the USD cap covers cross-file analysis and auto-fix calls too, not just
+  the file scanner.
+- `AutoRemediator` builds its provider client lazily, so dependency-only
+  auto-fix (which makes no AI calls) no longer requires an API key.
+- Trivy's multi-version `FixedVersion` ("2.2.28, 3.2.13") is resolved to a
+  single version; the raw string was written into manifests, producing
+  uninstallable requirements.
+- Trivy vendor-directory fallback re-roots its result paths under the
+  vendor directory, so baseline suppression, diff scoping, SARIF, and
+  history see paths that exist at the repo root.
+- Report and summary key drift: the executive summary digest reads
+  gitleaks' `Description` and trivy's description (secrets were counted as
+  "unknown" and every trivy row said "No description"), secrets render
+  with their real severity instead of an UNKNOWN/low badge, the AI attack
+  chain validation block renders (its AI fields were dropped in
+  projection), and dependency health reads `pkg_name`.
+- Severity comparisons in the enhanced analyzer compared against uppercase
+  values that the pipeline never produces, so the critical count was
+  always zero.
+- SBOM generation has a 300s timeout (a hung syft hung the request) and no
+  longer tries to enrich from a CWD-relative directory that does not exist.
+- The exploit-intel cache moved out of a fixed shared temp path into the
+  per-user cache directory.
+
 ### Removed
 
+- Dead SBOM code (`generate_sbom_formats`, the SPDX/CycloneDX converters,
+  the Snyk enrichment block) and the redundant second dependency-manifest
+  walk in the Trivy scanner.
 - `APPSEC_TOOLS`: parsed into a value nothing read; the CLI picker and the
   web checkboxes select tools. `LOG_LEVEL` (never read) and `FLASK_DEBUG`
   (`APPSEC_DEBUG` now also enables the Flask debugger). The dead

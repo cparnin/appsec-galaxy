@@ -39,7 +39,15 @@ _EPSS_HIGH_THRESHOLD = 0.1
 
 
 def _kev_cache_path() -> str:
-    return os.path.join(tempfile.gettempdir(), "appsec_galaxy_kev_cache.json")
+    """Per-user cache location. A fixed path in the shared temp directory
+    could be pre-created or symlinked by another local user."""
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    cache_dir = os.path.join(base, "appsec-galaxy")
+    try:
+        os.makedirs(cache_dir, mode=0o700, exist_ok=True)
+    except OSError:
+        return os.path.join(tempfile.gettempdir(), f"appsec_galaxy_kev_cache_{os.getuid()}.json")
+    return os.path.join(cache_dir, "kev_cache.json")
 
 
 def fetch_epss_scores(cve_ids: list[str]) -> dict[str, float]:

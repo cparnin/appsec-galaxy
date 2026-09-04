@@ -8,6 +8,7 @@ and connection-test contracts for both providers.
 from __future__ import annotations
 
 import inspect
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -288,10 +289,12 @@ def test_openai_request_output_and_usage_are_recorded():
         input="untrusted code",
         max_output_tokens=512,
     )
+    # OpenAI: cached tokens are a subset of input_tokens (total stays 120)
     assert ai_scanner.get_scan_token_usage() == {
         "input_tokens": 120,
         "output_tokens": 30,
         "cache_read_tokens": 40,
+        "cache_write_tokens": 0,
     }
 
 
@@ -303,6 +306,7 @@ def test_openai_missing_usage_details_are_zero():
         "input_tokens": 0,
         "output_tokens": 0,
         "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
     }
 
 
@@ -318,9 +322,10 @@ def test_anthropic_request_output_and_usage_are_recorded():
             SimpleNamespace(type="text", text="finding  "),
         ],
         usage=SimpleNamespace(
-            input_tokens=200,
+            input_tokens=200,               # Anthropic: EXCLUDES cache reads/writes
             output_tokens=50,
             cache_read_input_tokens=80,
+            cache_creation_input_tokens=20,
         ),
     )
     wrapped, create = _wrapped_anthropic_client(response)
@@ -341,11 +346,18 @@ def test_anthropic_request_output_and_usage_are_recorded():
         }],
         messages=[{"role": "user", "content": "untrusted code"}],
     )
+    # Regression: the counter used to store 200 as the total and then
+    # subtract the 80 cache reads again, under-billing every cached call
+    # and never charging the cache write.
     assert ai_scanner.get_scan_token_usage() == {
-        "input_tokens": 200,
+        "input_tokens": 300,   # 200 uncached + 80 cache read + 20 cache write
         "output_tokens": 50,
         "cache_read_tokens": 80,
+        "cache_write_tokens": 20,
     }
+    pricing = {"input": 3.0, "output": 15.0, "cached_input": 0.3}
+    expected = (200 * 3.0 + 20 * 3.0 * 1.25 + 80 * 0.3 + 50 * 15.0) / 1_000_000
+    assert abs(ai_scanner._estimate_scan_cost(pricing) - expected) < 1e-12
 
 
 def test_openai_truncated_response_logs_actionable_warning(caplog):
@@ -398,6 +410,7 @@ def test_anthropic_missing_usage_and_content_are_safe():
         "input_tokens": 0,
         "output_tokens": 0,
         "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
     }
 
 
@@ -587,6 +600,100 @@ def test_malformed_verification_response_preserves_original_findings(monkeypatch
     )
 
     assert result is original
+
+
+def _finding(path="app.py", line=1, vtype="SQL Injection"):
+    return {
+        "path": path, "start": {"line": line}, "ai_vulnerability_type": vtype,
+        "ai_title": "t", "ai_confidence": 0.9, "extra": {"metadata": {"confidence": 0.9}},
+    }
+
+
+def test_verification_matches_by_id_despite_retyped_echo(monkeypatch):
+    """Regression: confirmed findings were matched on the exact (file, line,
+    type) tuple the verifier re-typed, so "./app.py", "42" or "sql injection"
+    dropped a confirmed finding as if it were a false positive."""
+    findings = [_finding(line=42), _finding(path="lib/db.py", line=7, vtype="Command Injection")]
+    echo = json.dumps([
+        {"id": 0, "file": "./app.py", "line": "42", "type": "sql injection",
+         "confirmed": True, "confidence": "0.95"},
+        {"file": "lib/db.py", "line": 7, "type": "Command Injection", "confirmed": False},
+    ])
+    monkeypatch.setattr(ai_scanner, "_call_ai", lambda *args: echo)
+    result = ai_scanner._run_verification_pass(object(), "m", findings, [], 512)
+    assert [f["start"]["line"] for f in result] == [42]
+    assert result[0]["ai_confidence"] == 0.95
+
+
+def test_verification_falls_back_to_location_when_id_missing(monkeypatch):
+    findings = [_finding(line=3)]
+    echo = json.dumps([{"file": "app.py", "line": 3, "confirmed": True}])
+    monkeypatch.setattr(ai_scanner, "_call_ai", lambda *args: echo)
+    assert ai_scanner._run_verification_pass(object(), "m", findings, [], 512) == findings
+
+
+def test_verification_prompt_carries_ids(monkeypatch):
+    seen = {}
+
+    def capture(client, model, system, user, max_tokens):
+        seen["user"] = user
+        return "[]"
+
+    monkeypatch.setattr(ai_scanner, "_call_ai", capture)
+    ai_scanner._run_verification_pass(object(), "m", [_finding(), _finding(line=2)], [], 512)
+    assert '"id": 0' in seen["user"] and '"id": 1' in seen["user"]
+
+
+@pytest.mark.parametrize("bad", [
+    {"line": "not-a-number"}, {"confidence": "high"}, {"vulnerability_type": None},
+    {"severity": None}, {"cwe": None}, {"file": None},
+])
+def test_malformed_model_finding_is_rejected_not_raised(tmp_path, bad):
+    """Regression: one badly typed field raised inside _validate_finding and
+    the blanket except discarded the whole scan (tokens already billed)."""
+    (tmp_path / "app.py").write_text("x = 1\n")
+    finding = {"file": "app.py", "line": 1, "vulnerability_type": "SQL Injection",
+               "severity": "high", "confidence": 0.9, "description": "d", **bad}
+    result = ai_scanner._validate_finding(finding, tmp_path)
+    assert result is None or isinstance(result, dict)
+
+
+def test_well_typed_string_numbers_are_coerced(tmp_path):
+    (tmp_path / "app.py").write_text("x = 1\ny = 2\n")
+    finding = {"file": "app.py", "line": "2", "vulnerability_type": "SQL Injection",
+               "severity": "HIGH", "confidence": "0.9", "description": "d"}
+    result = ai_scanner._validate_finding(finding, tmp_path)
+    assert result is not None and result["start"]["line"] == 2 and result["severity"] == "high"
+
+
+def test_dedup_normalizes_paths_and_cwe_strings(tmp_path):
+    """Regression: semgrep writes absolute paths and "CWE-89: ..." strings,
+    the AI scanner relative paths and "CWE-89", so no AI finding was ever
+    deduplicated against a semgrep hit at the same location."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    out = tmp_path / "raw"
+    out.mkdir()
+    (out / "semgrep.json").write_text(json.dumps({"results": [{
+        "path": str(repo / "app.py"), "start": {"line": 10},
+        "extra": {"metadata": {"cwe": ["CWE-89: Improper Neutralization of SQL"]}},
+    }]}))
+    dup = {"path": "./app.py", "start": {"line": 12}, "cwe": "cwe-89", "ai_title": "sqli"}
+    keep = {"path": "other.py", "start": {"line": 10}, "cwe": "CWE-89", "ai_title": "x"}
+    assert ai_scanner._deduplicate_against_existing([dup, keep], out, repo) == [keep]
+
+
+def test_cost_cap_reached_is_shared_by_every_consumer(monkeypatch):
+    """The USD cap must stop cross-file and auto-fix calls, not only the
+    file scanner."""
+    monkeypatch.setenv("APPSEC_AI_SCAN_MAX_COST", "0.001")
+    monkeypatch.setenv("APPSEC_AI_SCAN_DEPTH", "standard")
+    ai_scanner._record_token_usage(2_000_000, 0)  # well past $0.001
+    assert ai_scanner.cost_cap_reached() is True
+    from appsec_galaxy import ai_cross_file
+    assert ai_cross_file._call_ai(object(), "m", "sys", "user") is None
+    monkeypatch.delenv("APPSEC_AI_SCAN_MAX_COST")
+    assert ai_scanner.cost_cap_reached() is False
 
 
 # ---------------------------------------------------------------------------

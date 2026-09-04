@@ -1321,7 +1321,10 @@ class DependencyCodePathAnalyzer:
         for finding in trivy_findings:
             if finding.get('tool') != 'trivy':
                 continue
-            pkg_name = finding.get('package_name', '') or finding.get('extra', {}).get('metadata', {}).get('package_name', '')
+            # Finding.from_trivy emits 'pkg_name'; older payloads used
+            # 'package_name'. Accept both before falling back to the message.
+            pkg_name = (finding.get('pkg_name') or finding.get('package_name')
+                        or finding.get('extra', {}).get('metadata', {}).get('package_name', ''))
             if not pkg_name:
                 # Try extracting from message
                 msg = finding.get('message', '') or finding.get('extra', {}).get('message', '')

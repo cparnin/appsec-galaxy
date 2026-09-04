@@ -76,8 +76,11 @@ class CrossFileAnalyzer:
         logger.info(f"Found {len(source_files)} source files to analyze")
 
         # 2. Analyze each file individually
+        # Keyed by repo-relative POSIX path: the one format every consumer
+        # (findings, chains, trace_data_flow) is normalized to.
         for file_path in source_files:
-            self.file_analysis_cache[str(file_path)] = self._analyze_single_file(file_path)
+            key = file_path.relative_to(self.repo_path).as_posix()
+            self.file_analysis_cache[key] = self._analyze_single_file(file_path)
 
         # 3. Build import/dependency graph
         self._build_import_graph()
@@ -151,7 +154,7 @@ class CrossFileAnalyzer:
 
             visited.remove(current_file)
 
-        dfs_trace(str(start_path.relative_to(self.repo_path)), [])
+        dfs_trace(start_path.relative_to(self.repo_path).as_posix(), [])
 
         result = {
             "start_file": start_file,
@@ -257,11 +260,16 @@ class CrossFileAnalyzer:
         }
         source_files = []
 
+        skip_dirs = {'node_modules', '.git', '__pycache__', 'venv', '.venv', 'dist', 'build', 'vendor'}
         for file_path in self.repo_path.rglob('*'):
-            if (file_path.is_file() and
-                file_path.suffix in source_extensions and
-                not any(exclude in str(file_path) for exclude in ['node_modules', '.git', '__pycache__', 'venv'])):
-                source_files.append(file_path)
+            if not file_path.is_file() or file_path.suffix not in source_extensions:
+                continue
+            # Prune by directory NAME, never by substring of the whole path:
+            # a checkout under ".../devenv/..." would otherwise analyze nothing.
+            rel_parts = file_path.relative_to(self.repo_path).parts[:-1]
+            if any(part in skip_dirs for part in rel_parts):
+                continue
+            source_files.append(file_path)
 
         return source_files
 
@@ -317,9 +325,12 @@ class CrossFileAnalyzer:
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         analysis["imports"].append({"module": alias.name, "type": "import"})
-                elif isinstance(node, ast.ImportFrom) and node.module:
+                elif isinstance(node, ast.ImportFrom) and (node.module or node.level):
+                    # Encode the relative level as leading dots ("." * level +
+                    # module) so `from . import util` resolves to ./util.py.
+                    module = "." * (node.level or 0) + (node.module or "")
                     for alias in node.names:
-                        analysis["imports"].append({"module": node.module, "function": alias.name, "type": "from_import"})
+                        analysis["imports"].append({"module": module, "function": alias.name, "type": "from_import"})
 
                 # Function analysis
                 elif isinstance(node, ast.FunctionDef):
@@ -821,39 +832,76 @@ class CrossFileAnalyzer:
         # Path-style: lodash/merge
         return module.split('/')[0]
 
+    _IMPORT_EXTENSIONS = ('.py', '.js', '.mjs', '.ts', '.jsx', '.tsx', '.java', '.kt', '.go', '.rs', '.php', '.rb', '.cs')
+
+    def _candidate_keys(self, base: str) -> list[str]:
+        """Cache keys a module base path could map to (file or package)."""
+        base = base.strip('/')
+        if not base:
+            return []
+        keys = [f"{base}{ext}" for ext in self._IMPORT_EXTENSIONS]
+        keys += [f"{base}/index{ext}" for ext in ('.js', '.ts', '.jsx', '.tsx')]
+        keys += [f"{base}/__init__.py", f"{base}/mod.rs"]
+        return [k for k in keys if k in self.file_analysis_cache]
+
     def _resolve_import(self, import_info: dict[str, str], source_file: str) -> str | None:
-        """Resolve an import to an actual file path"""
-        module = import_info.get('module', '')
+        """Resolve an import to a cache key (repo-relative path), or None.
 
-        # Handle relative imports (./file, ../file)
+        Resolution is exact: a module either maps to a file in the cache or
+        it does not. The former substring match (`module in path`) wired
+        `import os` to any file whose checkout path contained "os" and
+        produced fabricated attack chains.
+        """
+        module = import_info.get('module', '') or ''
+        if not module:
+            return None
+        source_dir = Path(source_file).parent
+
+        # Relative imports: ./x, ../x (JS), .x / ..x (Python)
         if module.startswith('.'):
-            source_dir = Path(source_file).parent
-            relative_path = source_dir / module.lstrip('./')
+            if module.startswith(('./', '../')):
+                target = (source_dir / module).as_posix() if str(source_dir) != '.' else module
+                target = str(Path(target)).replace('\\', '/')
+                # collapse ../ and ./ without touching the filesystem
+                parts: list[str] = []
+                for part in target.split('/'):
+                    if part in ('', '.'):
+                        continue
+                    if part == '..':
+                        if parts:
+                            parts.pop()
+                        continue
+                    parts.append(part)
+                return next(iter(self._candidate_keys('/'.join(parts))), None)
+            # Python: leading dots = package levels
+            dots = len(module) - len(module.lstrip('.'))
+            base_dir = source_dir
+            for _ in range(dots - 1):
+                base_dir = base_dir.parent
+            rest = module.lstrip('.').replace('.', '/')
+            base = (base_dir / rest).as_posix() if rest else base_dir.as_posix()
+            base = '' if base == '.' else base
+            # `from . import util` names a submodule in the imported name
+            imported_name = import_info.get('function') or ''
+            if imported_name:
+                hit = next(iter(self._candidate_keys(f"{base}/{imported_name}" if base else imported_name)), None)
+                if hit:
+                    return hit
+            return next(iter(self._candidate_keys(base)), None)
 
-            # Try different extensions
-            for ext in ['.py', '.js', '.ts', '.java', '.go', '.php']:
-                if (self.repo_path / f"{relative_path}{ext}").exists():
-                    return str((self.repo_path / f"{relative_path}{ext}").relative_to(self.repo_path))
+        # Dotted (Python package / Java package): a.b.c -> a/b/c
+        dotted = module.replace('.', '/')
+        for base in (dotted, (source_dir / dotted).as_posix()):
+            hit = next(iter(self._candidate_keys(base)), None)
+            if hit:
+                return hit
 
-        # Handle Java package imports (org.example.ClassName -> org/example/ClassName.java)
-        if '.' in module and not module.startswith('.'):
-            # Try treating as Java package
-            java_path = module.replace('.', '/') + '.java'
-            for source_file_path in self.file_analysis_cache.keys():
-                if source_file_path.endswith(java_path):
-                    return source_file_path
-
-            # Try last component only (ClassName from org.example.ClassName)
-            last_component = module.split('.')[-1]
-            for source_file_path in self.file_analysis_cache.keys():
-                if last_component in source_file_path and source_file_path.endswith('.java'):
-                    return source_file_path
-
-        # Handle absolute imports within project (for other languages)
-        for source_file_path in self.file_analysis_cache.keys():
-            if module in source_file_path:
-                return source_file_path
-
+        # Path-style (Go/JS package paths): keep the tail that exists in-repo
+        segments = [seg for seg in module.split('/') if seg]
+        for start in range(len(segments)):
+            hit = next(iter(self._candidate_keys('/'.join(segments[start:]))), None)
+            if hit:
+                return hit
         return None
 
     def _identify_entry_points_and_sinks(self):

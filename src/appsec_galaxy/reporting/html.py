@@ -142,6 +142,10 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
                 return value[len(_repo_prefix):].lstrip('/').lstrip('\\') or value
             return value
         env.filters['relpath'] = _to_relpath
+        # Secrets carry no scanner severity; finding_severity() is the one
+        # place that decides what they display as (critical).
+        from appsec_galaxy.finding import finding_severity
+        env.filters['severity'] = finding_severity
 
         template = env.get_template("report.html")
 
@@ -196,7 +200,12 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
                             'sink': chain.get('sink', 'Unknown'),
                             'description': chain.get('description', ''),
                             'files_involved': len(chain.get('attack_path', [])),
-                            'priority': 1 if chain.get('severity', '').lower() in ['critical', 'high'] else 2
+                            'priority': 1 if chain.get('severity', '').lower() in ['critical', 'high'] else 2,
+                            # AI validation fields (set by the AI cross-file
+                            # layer); the "Attack Chain Validation" block
+                            # renders only when these are present.
+                            **{k: chain[k] for k in ('ai_validated', 'ai_exploitability', 'ai_confidence',
+                                                     'ai_bypasses_needed', 'ai_adjusted_severity') if k in chain},
                         })
                         attack_chains_count += 1
 

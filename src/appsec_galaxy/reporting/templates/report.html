@@ -822,8 +822,8 @@
           <tr>
             <td>{{ f.get('extra', {}).get('message', f.get('Description', f.get('description', 'N/A'))) }}</td>
             <td>
-              <span class="severity-badge {{ f.get('severity', 'low').lower() }}">
-                {{ f.get('severity', 'unknown').upper() }}
+              <span class="severity-badge {{ (f|severity).lower() }}">
+                {{ (f|severity).upper() }}
               </span>
             </td>
             <td>
@@ -930,8 +930,8 @@
             <tr>
               <td>{{ f.get('extra', {}).get('message', f.get('description', 'N/A')) }}</td>
               <td>
-                <span class="severity-badge {{ f.get('severity', 'low').lower() }}">
-                  {{ f.get('severity', 'unknown').upper() }}
+                <span class="severity-badge {{ (f|severity).lower() }}">
+                  {{ (f|severity).upper() }}
                 </span>
               </td>
               <td>

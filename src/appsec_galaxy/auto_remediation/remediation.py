@@ -14,11 +14,48 @@ import shlex
 from appsec_galaxy.config import PROTECTED_FILE_PATTERNS
 from appsec_galaxy.scanners.ai_scanner import _call_ai
 
+from appsec_galaxy.finding import finding_severity
+
 logger = logging.getLogger(__name__)
 
 # Lockfiles the dependency remediator may regenerate next to a fixed manifest;
 # they are staged alongside it (and nothing else in the tree is).
 LOCKFILE_NAMES = ('package-lock.json', 'yarn.lock', 'go.sum', 'Cargo.lock', 'Gemfile.lock', 'composer.lock')
+
+
+def pick_fixed_version(raw: str, installed: str = '') -> str:
+    """Choose one target version from Trivy's FixedVersion field.
+
+    Trivy often lists several fixed versions ("2.2.28, 3.2.13"); writing the
+    raw string into a manifest produces an uninstallable requirement. Pick
+    the lowest listed version that is newer than what is installed, falling
+    back to the lowest listed version.
+    """
+    candidates = [v.strip() for v in str(raw or '').replace(';', ',').split(',') if v.strip()]
+    if len(candidates) <= 1:
+        return candidates[0] if candidates else ''
+    try:
+        from packaging.version import InvalidVersion, Version
+        try:
+            current = Version(installed) if installed else None
+        except InvalidVersion:
+            current = None
+        parsed = []
+        for c in candidates:
+            try:
+                parsed.append((Version(c), c))
+            except InvalidVersion:
+                continue
+        if not parsed:
+            return candidates[0]
+        parsed.sort(key=lambda pair: pair[0])
+        if current is not None:
+            for version, text in parsed:
+                if version > current:
+                    return text
+        return parsed[0][1]
+    except ImportError:
+        return candidates[0]
 
 def validate_package_name(name: str) -> bool:
     """
@@ -463,9 +500,7 @@ class AutoRemediator:
     """Handles automatic remediation of SAST findings."""
 
     def __init__(self, ai_provider: str, model: str | None = None):
-        from appsec_galaxy.scanners.ai_scanner import (
-            SUPPORTED_PROVIDERS, _get_ai_client, get_default_model,
-        )
+        from appsec_galaxy.scanners.ai_scanner import SUPPORTED_PROVIDERS, get_default_model
 
         self.ai_provider = ai_provider.strip().lower()
         if self.ai_provider not in SUPPORTED_PROVIDERS:
@@ -480,8 +515,16 @@ class AutoRemediator:
             or get_default_model(self.ai_provider)
         )
         self._logged_unsupported_types: set[str] = set()  # Track unsupported file types to reduce noise
+        self._client = None  # built on first AI use (dependency bumps never need a key)
 
-        self.client = _get_ai_client()
+    @property
+    def client(self):
+        """The provider SDK client, created lazily so dependency-only
+        remediation (mode 2) works without any AI key configured."""
+        if self._client is None:
+            from appsec_galaxy.scanners.ai_scanner import _get_ai_client
+            self._client = _get_ai_client()
+        return self._client
 
     def generate_executive_summary(self, findings: list[dict[str, Any]]) -> str:
         """Generate an executive summary of security findings."""
@@ -624,6 +667,10 @@ Focus on business impact and urgency. Be direct and actionable. Don't use techni
             user_input = self._get_fix_prompt(
                 check_id, message, file_path, line_number, context_str
             )
+            from appsec_galaxy.scanners.ai_scanner import cost_cap_reached
+            if cost_cap_reached():
+                logger.warning(f"Skipping AI fix for {file_path}: APPSEC_AI_SCAN_MAX_COST reached")
+                return None
             fix = _call_ai(
                 self.client,
                 self.model,
@@ -1128,7 +1175,8 @@ Provide the corrected code for line {line_number}.
         lines = []
         pkg_names = set()
         for f in dep_findings:
-            pkg = f.get('package_name', '') or f.get('extra', {}).get('metadata', {}).get('package_name', '')
+            pkg = (f.get('pkg_name') or f.get('package_name')
+                   or f.get('extra', {}).get('metadata', {}).get('package_name', ''))
             if pkg:
                 pkg_names.add(pkg)
 
@@ -1657,7 +1705,7 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
             target_path = finding.get('path', '')
             pkg_name = finding.get('pkg_name', '')
             current_version = finding.get('installed_version', '')
-            fixed_version = finding.get('fixed_version', '')
+            fixed_version = pick_fixed_version(finding.get('fixed_version', ''), current_version)
             vuln_id = finding.get('vulnerability_id', '')
 
             full_path = os.path.join(repo_path, target_path)
@@ -1934,8 +1982,8 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
             # Generate smarter title based on actual vulnerabilities and cross-file analysis
             if fixes:
                 # Get severity breakdown from findings
-                critical_count = len([f for f in findings if f.get('Severity', '').upper() == 'CRITICAL'])
-                high_count = len([f for f in findings if f.get('Severity', '').upper() == 'HIGH'])
+                critical_count = len([f for f in findings if finding_severity(f) == 'critical'])
+                high_count = len([f for f in findings if finding_severity(f) == 'high'])
 
                 # Get unique package names (avoiding duplicates) - sanitize for safety
                 raw_packages = []

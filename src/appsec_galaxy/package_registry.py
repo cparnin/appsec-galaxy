@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 from urllib.parse import quote
 
+from appsec_galaxy import __version__
+
 logger = logging.getLogger(__name__)
 
 
@@ -246,7 +248,7 @@ class PackageRegistryClient:
     def _fetch_cargo(self, name: str) -> dict[str, Any]:
         """Fetch crates.io metadata."""
         url = f"{self.REGISTRY_URLS['cargo']}/{name}"
-        data = self._http_get(url, headers={'User-Agent': 'AppSec-Galaxy/2.2.2'})
+        data = self._http_get(url, headers={'User-Agent': f'AppSec-Galaxy/{__version__}'})
         if data is None:
             return {'latest_version': '', 'last_publish_date': ''}
 

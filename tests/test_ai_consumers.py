@@ -84,6 +84,19 @@ def test_remediator_rejects_unknown_provider(provider):
         remediation.AutoRemediator(provider)
 
 
+def test_remediator_builds_no_client_until_an_ai_call(monkeypatch):
+    """Regression: __init__ built the SDK client, so dependency-only auto-fix
+    (mode 2, which makes no AI calls) failed without a provider key."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    calls = []
+    monkeypatch.setattr(remediation, "_get_ai_client", lambda: calls.append(1) or object(), raising=False)
+    r = remediation.AutoRemediator("anthropic")
+    assert r._client is None and calls == []
+    with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+        _ = r.client  # first AI use still fails loudly without a key
+
+
 def test_executive_summary_uses_shared_call(monkeypatch):
     wrapped = _shared_client(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -584,3 +597,37 @@ def test_dependencies_and_examples_cover_both_providers():
         "gem" + "ini",
     ):
         assert legacy_name not in combined.lower()
+
+
+# ---------------------------------------------------------------------------
+# Dependency fix version selection and finding key drift
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw, installed, expected", [
+    ("2.2.28, 3.2.13", "2.2.10", "2.2.28"),   # lowest fix newer than installed
+    ("2.2.28, 3.2.13", "2.9.0", "3.2.13"),    # 2.2.28 is not an upgrade
+    ("2.2.28,3.2.13", "", "2.2.28"),          # no installed version known
+    ("1.4.0", "1.0.0", "1.4.0"),              # single version unchanged
+    ("", "1.0.0", ""),
+    ("not-a-version, other", "1.0.0", "not-a-version"),
+])
+def test_pick_fixed_version_never_writes_a_version_list(raw, installed, expected):
+    """Regression: Trivy's multi-version FixedVersion was written verbatim,
+    producing requirements like `django==2.2.28, 3.2.13`."""
+    assert remediation.pick_fixed_version(raw, installed) == expected
+
+
+def test_dependency_pr_body_reads_trivy_package_and_severity_keys():
+    """Regression: the PR body read 'package_name' and 'Severity', but
+    Finding.from_trivy emits 'pkg_name' and a lowercase 'severity', so
+    dependency PR titles never carried a severity or package list."""
+    from appsec_galaxy.finding import finding_severity
+    findings = [
+        {"tool": "trivy", "pkg_name": "django", "severity": "critical", "vulnerability_id": "CVE-1"},
+        {"tool": "trivy", "pkg_name": "flask", "severity": "high", "vulnerability_id": "CVE-2"},
+    ]
+    assert [finding_severity(f) for f in findings] == ["critical", "high"]
+    r = remediation.AutoRemediator.__new__(remediation.AutoRemediator)
+    section = r._generate_dependency_health_section(findings)
+    # Was always empty: no finding carried a 'package_name' key.
+    assert "2 vulnerable packages" in section

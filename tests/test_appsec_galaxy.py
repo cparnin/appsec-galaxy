@@ -2241,6 +2241,64 @@ class TestAIScannerTokenThreadSafety:
 # regressions. They never call a live AI service: the client is monkey-patched.
 # See ai_cross_file.py for the module under test.
 
+class TestCrossFileImportResolution:
+    """Regression: _resolve_import used `module in absolute_path`, so
+    `import os` matched any file under a checkout path containing "os"
+    (like ~/repos/...) and the analyzer reported fabricated attack chains
+    that the AI layer then paid to validate."""
+
+    def _analyzer(self, tmp_path, files):
+        from appsec_galaxy.cross_file_analyzer import CrossFileAnalyzer
+        repo = tmp_path / 'repos' / 'app'   # path deliberately contains "os"
+        for rel, body in files.items():
+            (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (repo / rel).write_text(body)
+        analyzer = CrossFileAnalyzer(str(repo))
+        analyzer.analyze_repository_structure()
+        return analyzer
+
+    def test_stdlib_import_never_wires_to_a_repo_file(self, tmp_path):
+        a = self._analyzer(tmp_path, {
+            'routes.py': 'import os\nfrom flask import request\n',
+            'util.py': 'import subprocess\n',
+        })
+        assert a.import_graph.get('routes.py', []) == []
+
+    def test_relative_and_dotted_imports_resolve_exactly(self, tmp_path):
+        a = self._analyzer(tmp_path, {
+            'pkg/routes.py': 'from . import util\nfrom pkg.db import query\n',
+            'pkg/util.py': 'x = 1\n',
+            'pkg/db.py': 'def query(): pass\n',
+            'pkg/__init__.py': '',
+            'web/handler.js': "import helper from './lib/helper';\n",
+            'web/lib/helper.js': 'export default 1;\n',
+        })
+        assert set(a.import_graph['pkg/routes.py']) == {'pkg/util.py', 'pkg/db.py'}
+        assert a.import_graph['web/handler.js'] == ['web/lib/helper.js']
+
+    def test_cache_is_keyed_by_repo_relative_posix_paths(self, tmp_path):
+        a = self._analyzer(tmp_path, {'src/app.py': 'x = 1\n'})
+        assert list(a.file_analysis_cache) == ['src/app.py']
+
+
+class TestRepoRelativePaths:
+    def test_to_repo_relative_handles_every_scanner_format(self, tmp_path):
+        from appsec_galaxy.path_utils import to_repo_relative
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        assert to_repo_relative(str(repo / 'src' / 'a.py'), repo) == 'src/a.py'
+        assert to_repo_relative('./src/a.py', repo) == 'src/a.py'
+        assert to_repo_relative('src\\a.py', repo) == 'src/a.py'
+        assert to_repo_relative('.env', repo) == '.env'
+        assert to_repo_relative('', repo) == ''
+
+    def test_ai_cross_file_normalize_keeps_leading_dot_names(self):
+        """Regression: lstrip('./') is a character set; '.github/x' became 'github/x'."""
+        from appsec_galaxy.ai_cross_file import _normalize_path
+        assert _normalize_path('.github/workflows/ci.yml') == '.github/workflows/ci.yml'
+        assert _normalize_path('./.env') == '.env'
+
+
 class TestAICrossFileHelpers:
     """Pure helper functions in ai_cross_file.py: no mocking needed."""
 
@@ -3167,7 +3225,7 @@ class TestAIScanCostCap:
         monkeypatch.setattr(ai_scanner, '_get_ai_client', lambda: object())
         monkeypatch.setattr(ai_scanner, '_estimate_scan_cost', lambda pricing: 99.0)
         # Stub the provider preflight so fake_call counts batch calls only.
-        monkeypatch.setattr(ai_scanner, 'test_ai_connection', lambda: (True, 'stubbed'))
+        monkeypatch.setattr(ai_scanner, 'test_ai_connection', lambda model_id=None: (True, 'stubbed'))
 
         with caplog.at_level('WARNING'):
             findings = ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path))
@@ -3198,10 +3256,13 @@ class TestAIScanCostCap:
 
         monkeypatch.setattr(ai_scanner, '_call_ai', fake_call)
         monkeypatch.setattr(ai_scanner, '_get_ai_client', lambda: object())
-        monkeypatch.setattr(
-            ai_scanner, 'test_ai_connection',
-            lambda: (False, "openai does not recognize model 'gpt-retired'."),
-        )
+        probed = {}
+
+        def fake_probe(model_id=None):
+            probed['model'] = model_id
+            return False, "openai does not recognize model 'gpt-retired'."
+
+        monkeypatch.setattr(ai_scanner, 'test_ai_connection', fake_probe)
 
         with caplog.at_level('ERROR'):
             findings = ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path))
@@ -3210,6 +3271,10 @@ class TestAIScanCostCap:
         assert calls['n'] == 0, 'no batch may be sent when the provider is unusable'
         # The operator must be able to tell "broken" from "clean".
         assert 'does not recognize model' in caplog.text
+        # Regression: preflight probed the quick model, so a retired
+        # standard/deep model passed preflight and every batch then 404ed.
+        assert probed['model'] == ai_scanner._get_model_id(
+            os.getenv('APPSEC_AI_SCAN_DEPTH', 'standard'))
 
     def test_config_rejects_negative_cap(self, monkeypatch):
         import pydantic

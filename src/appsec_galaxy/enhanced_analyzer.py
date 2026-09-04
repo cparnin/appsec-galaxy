@@ -11,11 +11,9 @@ from pathlib import Path
 from typing import Any
 import logging
 
-# Import the cross-file analyzer functions
-try:
-    from .cross_file_analyzer import CrossFileAnalyzer
-except ImportError:
-    from appsec_galaxy.cross_file_analyzer import CrossFileAnalyzer
+from appsec_galaxy.cross_file_analyzer import CrossFileAnalyzer
+from appsec_galaxy.finding import finding_severity
+from appsec_galaxy.path_utils import to_repo_relative
 
 logger = logging.getLogger(__name__)
 
@@ -504,7 +502,7 @@ class CrossFileEnhancedAnalyzer:
 
         # Get vulnerability details
         vuln_type = finding.get('check_id', '').lower()
-        file_path = finding.get('path', '')
+        file_path = to_repo_relative(finding.get('path', ''), self.repo_path)
         line_number = finding.get('line', 'N/A')
 
         # Use cross-file analyzer data if available
@@ -571,7 +569,7 @@ class CrossFileEnhancedAnalyzer:
         base_impact = self.cross_file_analyzer.assess_business_impact(finding)
 
         # Enhance with cross-file analysis context
-        file_path = finding.get('path', '')
+        file_path = to_repo_relative(finding.get('path', ''), self.repo_path)
         vuln_type = finding.get('check_id', '').lower()
 
         enhanced_impact = base_impact.copy()
@@ -713,7 +711,7 @@ class CrossFileEnhancedAnalyzer:
         if not self.cross_file_analysis:
             return cross_file_analysis
 
-        file_path = finding.get('path', '')
+        file_path = to_repo_relative(finding.get('path', ''), self.repo_path)
         finding.get('check_id', '').lower()
         line_number = finding.get('line', 'N/A')
 
@@ -728,8 +726,7 @@ class CrossFileEnhancedAnalyzer:
             # Check if current file is involved in this attack chain
             file_in_chain = (file_path == entry_point or
                            file_path == sink or
-                           file_path in attack_path or
-                           any(file_path in path_file for path_file in attack_path))
+                           file_path in attack_path)
 
             if file_in_chain:
                 # Determine role in attack chain
@@ -799,8 +796,8 @@ class CrossFileEnhancedAnalyzer:
             "security_context": self.codebase_context.get('security_context', {}),
             "vulnerability_analysis": {
                 "total_findings": len(findings),
-                "critical_findings": len([f for f in findings if f.get('severity') == 'CRITICAL']),
-                "high_findings": len([f for f in findings if f.get('severity') in ['HIGH', 'ERROR']]),
+                "critical_findings": len([f for f in findings if finding_severity(f) == 'critical']),
+                "high_findings": len([f for f in findings if finding_severity(f) in ('high', 'error')]),
                 "context_enhanced": True
             },
             "risk_assessment": self._generate_risk_assessment(findings),
@@ -851,7 +848,7 @@ class CrossFileEnhancedAnalyzer:
         structure = self.codebase_context.get('structure', {})
 
         # Strategic recommendations based on findings
-        critical_count = len([f for f in findings if f.get('severity') == 'CRITICAL'])
+        critical_count = len([f for f in findings if finding_severity(f) == 'critical'])
         if critical_count > 0:
             recommendations.append("Immediate action required: Address critical vulnerabilities within 24 hours")
 

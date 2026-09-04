@@ -17,6 +17,32 @@ from appsec_galaxy.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def to_repo_relative(path: str | Path, repo_path: str | Path) -> str:
+    """Canonical repo-relative POSIX form of a finding or chain path.
+
+    Scanners disagree: semgrep emits absolute paths, the AI scanner and
+    linters emit relative ones, some carry a "./" prefix or backslashes.
+    Every comparison between a finding path and a cross-file chain path
+    must go through this helper so the format never decides the outcome.
+    """
+    raw = str(path or '').replace('\\', '/').strip()
+    if not raw:
+        return ''
+    root = str(Path(repo_path).resolve()).replace('\\', '/').rstrip('/') + '/'
+    if raw.startswith(root):
+        raw = raw[len(root):]
+    elif raw.startswith('/'):
+        try:
+            raw = str(Path(raw).resolve()).replace('\\', '/')
+            if raw.startswith(root):
+                raw = raw[len(root):]
+        except OSError:
+            pass
+    while raw.startswith('./'):
+        raw = raw[2:]
+    return raw
+
+
 def sanitize_path_component(name: str) -> str:
     """
     Convert repo/branch names to safe filesystem paths.

@@ -63,7 +63,10 @@ def _get_ai_client_and_model():
 def _call_ai(client, model_id: str, system_prompt: str, user_message: str, max_tokens: int = 4096) -> str | None:
     """Make an AI call using ai_scanner infrastructure (includes retry + token tracking)."""
     try:
-        from appsec_galaxy.scanners.ai_scanner import _call_ai as _scanner_call_ai
+        from appsec_galaxy.scanners.ai_scanner import _call_ai as _scanner_call_ai, cost_cap_reached
+        if cost_cap_reached():
+            logger.warning("AI cross-file call skipped: APPSEC_AI_SCAN_MAX_COST reached")
+            return None
         return _scanner_call_ai(client, model_id, system_prompt, user_message, max_tokens)
     except Exception as e:
         logger.error(f"AI cross-file call failed: {e}")
@@ -522,13 +525,16 @@ If no meaningful correlations exist, respond with: []"""
 # ---------------------------------------------------------------------------
 
 def _normalize_path(p: str) -> str:
-    """Normalize a path string for comparison (handles ./, \\, trailing /)."""
+    """Normalize a path string for comparison (handles ./, \\, trailing /).
+
+    Never lstrip('./'): that is a character set and turned ".env" into
+    "env" and ".github/x" into "github/x"."""
     if not p:
         return ''
-    try:
-        return Path(p).as_posix().lstrip('./')
-    except Exception:
-        return str(p).strip()
+    raw = str(p).replace('\\', '/').strip().rstrip('/')
+    while raw.startswith('./'):
+        raw = raw[2:]
+    return raw
 
 
 def validate_sanitization(
@@ -770,13 +776,9 @@ def run_ai_cross_file_analysis(
     # counter is shared with ai_scanner; we want a clean delta).
     try:
         from appsec_galaxy.scanners.ai_scanner import get_scan_token_usage
-        snap = get_scan_token_usage()
-        tokens_before = {
-            'input': snap.get('input_tokens', 0),
-            'output': snap.get('output_tokens', 0),
-        }
+        snap_before = get_scan_token_usage()
     except Exception:
-        tokens_before = {'input': 0, 'output': 0}
+        snap_before = {}
 
     # Initialize shared client (avoid creating multiple connections)
     client, model_id = _get_ai_client_and_model()
@@ -833,17 +835,16 @@ def run_ai_cross_file_analysis(
 
     # Compute token delta + cost estimate for THIS phase only
     try:
-        from appsec_galaxy.scanners.ai_scanner import get_scan_token_usage, get_depth_pricing
+        from appsec_galaxy.scanners.ai_scanner import (
+            estimate_usage_cost, get_depth_pricing, get_scan_token_usage,
+        )
         depth = os.getenv('APPSEC_AI_SCAN_DEPTH', 'standard').lower()
         pricing = get_depth_pricing(depth)
         snap_after = get_scan_token_usage()
-        input_delta = snap_after.get('input_tokens', 0) - tokens_before['input']
-        output_delta = snap_after.get('output_tokens', 0) - tokens_before['output']
-        cost_usd = round(
-            (input_delta / 1_000_000) * pricing['input']
-            + (output_delta / 1_000_000) * pricing['output'],
-            4,
-        )
+        delta = {k: snap_after.get(k, 0) - snap_before.get(k, 0) for k in snap_after}
+        input_delta = delta.get('input_tokens', 0)
+        output_delta = delta.get('output_tokens', 0)
+        cost_usd = round(estimate_usage_cost(delta, pricing), 4)  # same cache-aware math as the scanner
     except Exception:
         input_delta = output_delta = 0
         cost_usd = 0.0

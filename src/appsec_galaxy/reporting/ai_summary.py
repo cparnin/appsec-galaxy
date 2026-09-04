@@ -16,6 +16,7 @@ import re
 import time
 from typing import Any
 
+from appsec_galaxy.finding import finding_message, finding_severity
 from appsec_galaxy.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -214,8 +215,8 @@ def _build_findings_digest(findings: list[dict[str, Any]], cross_file_data: dict
     Keeps it small to control cost, but includes enough signal for a good summary.
     """
     # Separate by category
-    security = [f for f in findings if f.get('extra', {}).get('metadata', {}).get('category') != 'code_quality']
-    code_quality = [f for f in findings if f.get('extra', {}).get('metadata', {}).get('category') == 'code_quality']
+    security = [f for f in findings if not is_code_quality(f)]
+    code_quality = [f for f in findings if is_code_quality(f)]
 
     # Count by tool and severity
     by_tool: dict[str, int] = {}
@@ -235,15 +236,17 @@ def _build_findings_digest(findings: list[dict[str, Any]], cross_file_data: dict
 
     # Top 15 most critical findings (enough context without blowing up tokens)
     severity_rank = {'critical': 0, 'high': 1, 'error': 1, 'medium': 2, 'low': 3}
-    ranked = sorted(security, key=lambda f: severity_rank.get(f.get('severity', '').lower(), 4))
+    ranked = sorted(security, key=lambda f: severity_rank.get(finding_severity(f), 4))
 
     lines.append("\nTop findings:")
     for i, f in enumerate(ranked[:15]):
-        msg = f.get('extra', {}).get('message', f.get('message', 'No description'))
+        # finding_message reads semgrep's extra.message, trivy's description,
+        # and gitleaks' Description alike (each tool names the field differently)
+        msg = finding_message(f) or 'No description'
         if len(msg) > 200:
             msg = msg[:200] + '...'
         check_id = f.get('check_id', '')
-        sev = f.get('severity', 'unknown')
+        sev = finding_severity(f)
         tool = f.get('tool', 'unknown')
         path = f.get('path', '')
         line_num = f.get('start', {}).get('line', '')
@@ -275,7 +278,7 @@ def _build_findings_digest(findings: list[dict[str, Any]], cross_file_data: dict
     if secrets:
         secret_types: dict[str, int] = {}
         for s in secrets:
-            desc = s.get('extra', {}).get('description', s.get('description', 'unknown'))
+            desc = s.get('Description') or s.get('RuleID') or s.get('description') or 'unknown'
             secret_types[desc] = secret_types.get(desc, 0) + 1
         lines.append(f"\nSecrets detected: {json.dumps(secret_types)}")
 
