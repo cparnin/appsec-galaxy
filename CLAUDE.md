@@ -252,7 +252,7 @@ Every env var the code reads must appear in `env.example` or
 `mcp/mcp_env.example`; every documented var must be read by code. Audit with
 a name-only grep when touching configuration.
 
-## Security Invariants (summary; full list in AGENTS.md)
+## Security Invariants (summary; canonical list in ARCHITECTURE.md)
 
 - Untrusted everything: scanned repos, filenames, findings, model output.
   Scanned-repo code never executes: linters use bundled configs (never the
@@ -334,5 +334,14 @@ per-scan cost and `ai_scan.json` token usage.
   price cut. The self-scan workflow is now rule-based only: no scheduled
   runs, no AI calls, no provider secrets, zero CI API spend (owner
   preference; run AI scans locally instead).
+- 2026-09-04 (v2.7.0): full application review. Six parallel reviews, every
+  verified finding fixed with a regression test. The recurring defect class
+  was "a tool failed but the scan reported zero findings" (gitleaks on a
+  non-git directory, three linters whose JSON went to a discarded stdout,
+  Checkstyle's exit code read as a crash), so prefer surfacing tool failure
+  over an empty result anywhere new. Also: one `finalize_scan` pipeline for
+  all three modes, one `compute_summary_stats` for every displayed number,
+  one `to_repo_relative` for every path comparison. Clippy and PHPStan were
+  removed (they execute scanned-repo code and never produced findings).
 - The private upstream checkout is a read-only reference and must never be
   modified (see rule 11).

@@ -165,112 +165,6 @@ default input, and the executive summary's numbers agree with each other.
 - The exploit-intel cache moved out of a fixed shared temp path into the
   per-user cache directory.
 
-### Tests
-
-- The suite is split by area into `test_scanners.py`,
-  `test_dependency_analysis.py`, `test_ai_analysis.py`,
-  `test_remediation.py`, `test_pipeline_cli.py`, `test_reporting.py`, and
-  `test_interfaces.py` (the old 5,600-line `test_appsec_galaxy.py` is
-  gone); `tests/README.md` maps each file to what it covers.
-- Tests that asserted against logic pasted into the test file now drive
-  the real functions (`validate_attack_chains`,
-  `run_cross_file_pipeline`), and the AI-disabled and privacy-tier tests
-  fail loudly if a provider client is built instead of passing because no
-  key happens to be configured.
-- No test makes a network request (the dependency integration tests were
-  issuing registry lookups), `conftest.py` disables dotenv loading for the
-  whole session so a reimport cannot pull in real keys, the privacy-tier
-  picker test no longer leaks its env var, and 12 unused fixtures are gone.
-- New coverage for remediation safety gates (protected files, secret
-  findings, path confinement) and web security (API-key enforcement, the
-  report allowlist, directory-browsing policy).
-
-### Documentation
-
-- Corrected every claim the audit found stale: max output tokens in
-  `ARCHITECTURE.md` (4096/4096/8192 to 8192/16384/32768), "draft pull
-  request" (no PR is a draft), 90-day artifact retention in
-  `clients/SETUP.md` (30), the client workflow's "default settings" block
-  (it showed OpenAI wiring the workflow does not use), `mcp/README.md`
-  still presenting OpenAI as the default provider, the claim that the
-  repository ships `.codex/config.toml` (it is git-ignored), and the
-  suggestion that an MCP resource URI can take a path (the template
-  matches one segment).
-- `ARCHITECTURE.md` is now the canonical security-invariant list and
-  carries the complete package layout; `CLAUDE.md` and `AGENTS.md` point
-  to it. Gate commands live in `CLAUDE.md` alone, and the model/pricing
-  tables name `ai_scanner.py` as their source instead of repeating values.
-- `env.example` lost the dead `LOG_LEVEL` line, changelog-style commentary
-  about removed variables, wrong `src/` paths, and a
-  directory-browsing default that contradicted its own warning;
-  `APPSEC_AUTO_FIX_DELAY` is documented with its real default (0) and
-  meaning (between fixes, not before the first).
-- `docs/ROADMAP.md` is rewritten as a short historical record: every item
-  shipped, and it carried stale counts, a personal filesystem path, and
-  workflow rules that contradicted `CLAUDE.md`.
-
-### Removed
-
-- `requirements-web.txt`, which nothing referenced (the `web` extra in
-  `pyproject.toml` covers it), and the test-only packages in
-  `requirements.txt`, which the Action runner installed on every client
-  run. A test now pins requirements.txt to pyproject's runtime list.
-- Dead SBOM code (`generate_sbom_formats`, the SPDX/CycloneDX converters,
-  the Snyk enrichment block) and the redundant second dependency-manifest
-  walk in the Trivy scanner.
-- `APPSEC_TOOLS`: parsed into a value nothing read; the CLI picker and the
-  web checkboxes select tools. `LOG_LEVEL` (never read) and `FLASK_DEBUG`
-  (`APPSEC_DEBUG` now also enables the Flask debugger). The dead
-  "minimal output" logging block in main.py that targeted logger names
-  that do not exist. `action.yml` no longer forces `APPSEC_DEBUG` and
-  `APPSEC_LOG_LEVEL` on, so a caller's `env:` can set them.
-- `APPSEC_AI_SCAN_MAX_COST=''` (what the GitHub Action exports when the
-  input is left blank) failed pydantic float parsing at startup, so every
-  client run of v2.6.3 crashed before scanning. Empty env vars now count
-  as unset for all `APPSEC_*` settings.
-
-- The bundled gitleaks config now extends the upstream default ruleset
-  (`[extend] useDefault = true`), adding 150+ maintained provider rules on
-  top of the 20 hand-written ones. Detection was previously frozen at the
-  formats written by hand, so any credential prefix a provider introduced
-  or rotated was silently undetectable. Verified: an npm access token that
-  the old config missed is now caught, with no new findings on this repo
-  (the five re-matched fixture/demo lines are suppressed by fingerprint in
-  `.gitleaksignore`). Deliberately did **not** add a path allowlist to the
-  bundled config, since it applies to scanned repositories and would hide
-  real secrets in someone else's tree.
-- Gitleaks findings no longer carry the plaintext credential past the
-  `Finding` boundary. `Secret` and `Match` are stripped in
-  `Finding.from_gitleaks`, so the secret value no longer reaches the web
-  `/scan` JSON response, the HTML report, or any AI prompt. Confidence
-  classification is unaffected (it reads the raw record first), and the
-  verbatim value still exists only in `outputs/<repo>/raw/` (gitignored).
-  The MCP surface already redacted this; the web surface had diverged.
-- Fixed DOM XSS sinks in the web UI. The repository browser built
-  `onclick="browseInto('<path>')"` by string concatenation with an escaper
-  that handled `\` and `'` but not `"`, so a directory named
-  `x" onmouseover="..."` broke out of the attribute. The browser list, the
-  results-panel repo name/path, and server error text are now built with
-  DOM APIs and `textContent`, with no inline event handlers anywhere.
-- Added baseline security headers to every web response (CSP,
-  `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy`) as
-  defense in depth behind Jinja autoescaping, since the report rendered
-  from hostile scanned repos is served from the app's own origin.
-- Added a DNS-rebinding guard: when bound to loopback, requests carrying a
-  non-loopback `Host` header are rejected. An intentional `0.0.0.0`
-  deployment is unaffected.
-- Hardened argument handling against untrusted scanner output:
-  `validate_package_name` now rejects a leading hyphen, `go get` and macOS
-  `open` take `--`, and pylint's file list is preceded by `--` so a file
-  named `--rcfile=evil.cfg` cannot load an arbitrary plugin.
-- `_secure_file_path` now compares the repo boundary with a trailing
-  separator, so a symlink resolving to a sibling directory that shares the
-  repo's prefix (`/repo-evil` vs `/repo`) is rejected.
-- Package names are percent-encoded before going into registry URLs
-  (structural characters preserved for npm scopes, Go module paths, and
-  Maven `groupId:artifactId`).
-
-### Fixed
 
 - Interactive-CLI reports over-counted vulnerable dependencies. The
   interactive summary counted every trivy finding as a dependency CVE,
@@ -335,6 +229,111 @@ default input, and the executive summary's numbers agree with each other.
 - Refreshed the OpenAI rows of `MODEL_PRICING` for the 2026-07-30 price
   cut (gpt-5.6-luna $0.20/$1.20, gpt-5.6-terra $2/$12 per 1M tokens), so
   printed cost estimates match current list prices.
+
+### Removed
+
+- `requirements-web.txt`, which nothing referenced (the `web` extra in
+  `pyproject.toml` covers it), and the test-only packages in
+  `requirements.txt`, which the Action runner installed on every client
+  run. A test now pins requirements.txt to pyproject's runtime list.
+- Dead SBOM code (`generate_sbom_formats`, the SPDX/CycloneDX converters,
+  the Snyk enrichment block) and the redundant second dependency-manifest
+  walk in the Trivy scanner.
+- `APPSEC_TOOLS`: parsed into a value nothing read; the CLI picker and the
+  web checkboxes select tools. `LOG_LEVEL` (never read) and `FLASK_DEBUG`
+  (`APPSEC_DEBUG` now also enables the Flask debugger). The dead
+  "minimal output" logging block in main.py that targeted logger names
+  that do not exist. `action.yml` no longer forces `APPSEC_DEBUG` and
+  `APPSEC_LOG_LEVEL` on, so a caller's `env:` can set them.
+- `APPSEC_AI_SCAN_MAX_COST=''` (what the GitHub Action exports when the
+  input is left blank) failed pydantic float parsing at startup, so every
+  client run of v2.6.3 crashed before scanning. Empty env vars now count
+  as unset for all `APPSEC_*` settings.
+
+- The bundled gitleaks config now extends the upstream default ruleset
+  (`[extend] useDefault = true`), adding 150+ maintained provider rules on
+  top of the 20 hand-written ones. Detection was previously frozen at the
+  formats written by hand, so any credential prefix a provider introduced
+  or rotated was silently undetectable. Verified: an npm access token that
+  the old config missed is now caught, with no new findings on this repo
+  (the five re-matched fixture/demo lines are suppressed by fingerprint in
+  `.gitleaksignore`). Deliberately did **not** add a path allowlist to the
+  bundled config, since it applies to scanned repositories and would hide
+  real secrets in someone else's tree.
+- Gitleaks findings no longer carry the plaintext credential past the
+  `Finding` boundary. `Secret` and `Match` are stripped in
+  `Finding.from_gitleaks`, so the secret value no longer reaches the web
+  `/scan` JSON response, the HTML report, or any AI prompt. Confidence
+  classification is unaffected (it reads the raw record first), and the
+  verbatim value still exists only in `outputs/<repo>/raw/` (gitignored).
+  The MCP surface already redacted this; the web surface had diverged.
+- Fixed DOM XSS sinks in the web UI. The repository browser built
+  `onclick="browseInto('<path>')"` by string concatenation with an escaper
+  that handled `\` and `'` but not `"`, so a directory named
+  `x" onmouseover="..."` broke out of the attribute. The browser list, the
+  results-panel repo name/path, and server error text are now built with
+  DOM APIs and `textContent`, with no inline event handlers anywhere.
+- Added baseline security headers to every web response (CSP,
+  `X-Frame-Options: DENY`, `X-Content-Type-Options`, `Referrer-Policy`) as
+  defense in depth behind Jinja autoescaping, since the report rendered
+  from hostile scanned repos is served from the app's own origin.
+- Added a DNS-rebinding guard: when bound to loopback, requests carrying a
+  non-loopback `Host` header are rejected. An intentional `0.0.0.0`
+  deployment is unaffected.
+- Hardened argument handling against untrusted scanner output:
+  `validate_package_name` now rejects a leading hyphen, `go get` and macOS
+  `open` take `--`, and pylint's file list is preceded by `--` so a file
+  named `--rcfile=evil.cfg` cannot load an arbitrary plugin.
+- `_secure_file_path` now compares the repo boundary with a trailing
+  separator, so a symlink resolving to a sibling directory that shares the
+  repo's prefix (`/repo-evil` vs `/repo`) is rejected.
+- Package names are percent-encoded before going into registry URLs
+  (structural characters preserved for npm scopes, Go module paths, and
+  Maven `groupId:artifactId`).
+
+### Tests
+
+- The suite is split by area into `test_scanners.py`,
+  `test_dependency_analysis.py`, `test_ai_analysis.py`,
+  `test_remediation.py`, `test_pipeline_cli.py`, `test_reporting.py`, and
+  `test_interfaces.py` (the old 5,600-line `test_appsec_galaxy.py` is
+  gone); `tests/README.md` maps each file to what it covers.
+- Tests that asserted against logic pasted into the test file now drive
+  the real functions (`validate_attack_chains`,
+  `run_cross_file_pipeline`), and the AI-disabled and privacy-tier tests
+  fail loudly if a provider client is built instead of passing because no
+  key happens to be configured.
+- No test makes a network request (the dependency integration tests were
+  issuing registry lookups), `conftest.py` disables dotenv loading for the
+  whole session so a reimport cannot pull in real keys, the privacy-tier
+  picker test no longer leaks its env var, and 12 unused fixtures are gone.
+- New coverage for remediation safety gates (protected files, secret
+  findings, path confinement) and web security (API-key enforcement, the
+  report allowlist, directory-browsing policy).
+
+### Documentation
+
+- Corrected every claim the audit found stale: max output tokens in
+  `ARCHITECTURE.md` (4096/4096/8192 to 8192/16384/32768), "draft pull
+  request" (no PR is a draft), 90-day artifact retention in
+  `clients/SETUP.md` (30), the client workflow's "default settings" block
+  (it showed OpenAI wiring the workflow does not use), `mcp/README.md`
+  still presenting OpenAI as the default provider, the claim that the
+  repository ships `.codex/config.toml` (it is git-ignored), and the
+  suggestion that an MCP resource URI can take a path (the template
+  matches one segment).
+- `ARCHITECTURE.md` is now the canonical security-invariant list and
+  carries the complete package layout; `CLAUDE.md` and `AGENTS.md` point
+  to it. Gate commands live in `CLAUDE.md` alone, and the model/pricing
+  tables name `ai_scanner.py` as their source instead of repeating values.
+- `env.example` lost the dead `LOG_LEVEL` line, changelog-style commentary
+  about removed variables, wrong `src/` paths, and a
+  directory-browsing default that contradicted its own warning;
+  `APPSEC_AUTO_FIX_DELAY` is documented with its real default (0) and
+  meaning (between fixes, not before the first).
+- `docs/ROADMAP.md` is rewritten as a short historical record: every item
+  shipped, and it carried stale counts, a personal filesystem path, and
+  workflow rules that contradicted `CLAUDE.md`.
 
 ## [2.6.3] - 2026-07-17
 
