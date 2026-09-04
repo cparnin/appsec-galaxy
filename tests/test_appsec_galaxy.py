@@ -387,7 +387,9 @@ class TestLanguageDetection:
         (temp_dir / "app.py").write_text("print('hi')")
 
         languages = detect_languages(temp_dir)
-        assert 'python' in languages
+        # Equality, not membership: with `in`, the test passes even if
+        # node_modules stops being ignored.
+        assert languages == {'python'}
 
     def test_empty_repo(self, temp_dir):
         """Test empty directory."""
@@ -461,10 +463,11 @@ class TestGitleaks:
         mock_subprocess.side_effect = mock_run
         results = run_gitleaks(str(mock_repo), output_dir)
 
-        assert isinstance(results, list)
-        assert len(results) > 0
-        assert all('category' in f for f in results)
-        assert all(f['category'] == 'security' for f in results)
+        assert [r['RuleID'] for r in results] == [
+            r['RuleID'] for r in sample_gitleaks_output]
+        assert all(f['category'] == 'security' and f['tool'] == 'gitleaks' for f in results)
+        # The secret value never crosses the Finding boundary.
+        assert all('Secret' not in f and 'Match' not in f for f in results)
 
     @patch('appsec_galaxy.scanners.gitleaks.subprocess.run')
     @patch('appsec_galaxy.scanners.gitleaks.validate_binary_path')
@@ -1679,41 +1682,46 @@ class TestRemediationPathConfinement:
 
 
 class TestDependencyAnalyzerIntegration:
-    """Integration tests for the full dependency analyzer."""
+    """Integration tests for the full dependency analyzer.
+
+    Health checks are disabled: they issue one registry HTTP request per
+    package, and a failed request degrades to "unknown" so the tests would
+    pass either way while making dozens of outbound calls per run.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _no_registry_calls(self, monkeypatch):
+        # The flag is read into a module constant at import time, so setting
+        # the env var here would be too late.
+        import appsec_galaxy.dependency_analyzer as da
+        import appsec_galaxy.package_registry as pr
+        monkeypatch.setattr(da, 'DEPENDENCY_HEALTH_CHECK', False, raising=False)
+        monkeypatch.setattr(pr.PackageRegistryClient, '_http_get',
+                            lambda self, url, headers=None: pytest.fail(f'no network in tests: {url}'))
 
     def test_analyze_npm_repo(self, mock_repo):
-        """Test analysis of a repo with package.json."""
-        analyzer = DependencyCodePathAnalyzer()
-        report = analyzer.analyze(str(mock_repo))
+        """Both package.json dependencies are found, by name."""
+        report = DependencyCodePathAnalyzer().analyze(str(mock_repo))
         assert report.total_dependencies > 0
         assert report.analyzed_dependencies > 0
-        # Should find express and lodash from mock_repo's package.json
-        pkg_names = [d.package_name for d in report.dependencies]
-        assert "express" in pkg_names or "lodash" in pkg_names
+        pkg_names = {d.package_name for d in report.dependencies}
+        assert {"express", "lodash"} <= pkg_names
 
     def test_analyze_python_repo(self, mock_repo):
-        """Test analysis finds Python deps."""
-        analyzer = DependencyCodePathAnalyzer()
-        report = analyzer.analyze(str(mock_repo))
-        pkg_names = [d.package_name for d in report.dependencies]
-        assert "flask" in pkg_names or "requests" in pkg_names
+        pkg_names = {d.package_name for d in DependencyCodePathAnalyzer().analyze(str(mock_repo)).dependencies}
+        assert {"flask", "requests"} <= pkg_names
 
-    def test_report_has_breakdowns(self, mock_repo):
-        """Test that report includes health/depth/strategy breakdowns."""
-        analyzer = DependencyCodePathAnalyzer()
-        report = analyzer.analyze(str(mock_repo))
-        assert isinstance(report.health_breakdown, dict)
-        assert isinstance(report.depth_breakdown, dict)
-        assert isinstance(report.strategy_breakdown, dict)
+    def test_report_breakdowns_count_every_dependency(self, mock_repo):
+        report = DependencyCodePathAnalyzer().analyze(str(mock_repo))
+        for breakdown in (report.health_breakdown, report.depth_breakdown, report.strategy_breakdown):
+            assert sum(breakdown.values()) == report.analyzed_dependencies
 
-    def test_report_to_dict(self, mock_repo):
-        """Test report serialization."""
-        analyzer = DependencyCodePathAnalyzer()
-        report = analyzer.analyze(str(mock_repo))
+    def test_report_to_dict_round_trips_dependencies(self, mock_repo):
+        report = DependencyCodePathAnalyzer().analyze(str(mock_repo))
         d = report.to_dict()
-        assert isinstance(d, dict)
-        assert "dependencies" in d
-        assert "health_breakdown" in d
+        assert {entry['package_name'] for entry in d['dependencies']} == {
+            dep.package_name for dep in report.dependencies}
+        assert d['health_breakdown'] == report.health_breakdown
 
     def test_disabled_returns_none(self, mock_repo):
         """Test that disabled feature returns None."""
@@ -2354,31 +2362,40 @@ class TestAICrossFileHelpers:
 
 
 class TestAICrossFileSeveritySort:
-    """Regression: severity sort must handle mixed-case from semgrep."""
+    """Regression: the chain cap must spend on the most severe chains, and
+    semgrep's uppercase severities must not sort last. Exercises the real
+    validate_attack_chains cap, not a copy of its sort."""
 
-    def test_uppercase_error_outranks_medium(self):
-        """Semgrep emits ERROR/WARNING: must rank ahead of medium/low."""
-        # Reproduce the sort logic from correlate_findings()
-        severity_rank = {'critical': 0, 'high': 1, 'error': 1, 'medium': 2, 'low': 3}
-        items = [
-            {'severity': 'medium'},
-            {'severity': 'ERROR'},
-            {'severity': 'low'},
-            {'severity': 'CRITICAL'},
-        ]
-        items.sort(key=lambda f: severity_rank.get(str(f.get('severity', '')).lower(), 4))
-        # Critical first, then ERROR (high), then medium, then low
-        assert items[0]['severity'] == 'CRITICAL'
-        assert items[1]['severity'] == 'ERROR'
-        assert items[2]['severity'] == 'medium'
-        assert items[3]['severity'] == 'low'
+    def _chains(self, severities):
+        return [{'severity': s, 'entry_point': f'e{i}.py', 'sink': f's{i}.py',
+                 'vulnerability_type': 'sqli', 'attack_path': [f'e{i}.py', f's{i}.py']}
+                for i, s in enumerate(severities)]
 
-    def test_unknown_severity_goes_last(self):
-        severity_rank = {'critical': 0, 'high': 1, 'error': 1, 'medium': 2, 'low': 3}
-        items = [{'severity': 'mystery'}, {'severity': 'critical'}]
-        items.sort(key=lambda f: severity_rank.get(str(f.get('severity', '')).lower(), 4))
-        assert items[0]['severity'] == 'critical'
-        assert items[1]['severity'] == 'mystery'
+    def test_cap_keeps_the_most_severe_chains(self, monkeypatch, tmp_path):
+        from appsec_galaxy import ai_cross_file
+        monkeypatch.setattr(ai_cross_file, 'MAX_CHAINS_TO_VALIDATE', 2)
+        sent = []
+
+        def fake_batch(client, model_id, batch, repo):
+            sent.extend(batch)
+            return batch
+
+        monkeypatch.setattr(ai_cross_file, '_validate_chain_batch', fake_batch)
+        chains = self._chains(['low', 'ERROR', 'medium', 'CRITICAL'])
+        result = ai_cross_file.validate_attack_chains(chains, str(tmp_path), client=object(), model_id='m')
+        assert [c['severity'] for c in sent] == ['CRITICAL', 'ERROR']
+        # Chains past the cap are still returned, just unvalidated.
+        assert len(result) == 4
+
+    def test_unknown_severity_sorts_last(self, monkeypatch, tmp_path):
+        from appsec_galaxy import ai_cross_file
+        monkeypatch.setattr(ai_cross_file, 'MAX_CHAINS_TO_VALIDATE', 1)
+        sent = []
+        monkeypatch.setattr(ai_cross_file, '_validate_chain_batch',
+                            lambda client, model_id, batch, repo: sent.extend(batch) or batch)
+        ai_cross_file.validate_attack_chains(self._chains(['mystery', 'critical']),
+                                             str(tmp_path), client=object(), model_id='m')
+        assert [c['severity'] for c in sent] == ['critical']
 
 
 class TestAICrossFileOrchestrator:
@@ -2386,8 +2403,13 @@ class TestAICrossFileOrchestrator:
 
     def test_disabled_returns_inputs_unchanged(self, monkeypatch):
         """When APPSEC_AI_SCAN=false, return inputs without calling OpenAI."""
+        from appsec_galaxy import ai_cross_file
         from appsec_galaxy.ai_cross_file import run_ai_cross_file_analysis
         monkeypatch.setenv('APPSEC_AI_SCAN', 'false')
+        # Without this sentinel the test passes even if the gate is deleted:
+        # with no key configured the client build returns (None, None) anyway.
+        monkeypatch.setattr(ai_cross_file, '_get_ai_client_and_model',
+                            lambda: pytest.fail('AI disabled: no client may be built'))
 
         findings = [{'path': 'a.py', 'severity': 'high'}]
         chains = [{'entry_point': 'a.py', 'sink': 'b.py', 'vulnerability_type': 'sqli'}]
@@ -2399,9 +2421,12 @@ class TestAICrossFileOrchestrator:
 
     def test_low_privacy_tier_skips_ai(self, monkeypatch):
         """Tier 2 (metadata only) and tier 1 (no AI) must skip cross-file LLM."""
+        from appsec_galaxy import ai_cross_file
         from appsec_galaxy.ai_cross_file import run_ai_cross_file_analysis
         monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
         monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '2')
+        monkeypatch.setattr(ai_cross_file, '_get_ai_client_and_model',
+                            lambda: pytest.fail('tier 2 must not build a cross-file client'))
 
         result = run_ai_cross_file_analysis([], [], '/tmp/repo')
         assert result['ai_enhanced'] is False
@@ -2423,119 +2448,68 @@ class TestAICrossFileOrchestrator:
 
 
 class TestAICrossFileChainPropagation:
-    """
-    Regression for the CRITICAL Phase 2 bug: AI-validated chains must
-    propagate AI fields onto each finding's per-finding chain snapshots,
-    not just the analyzer-level chain list.
-    """
+    """Regression: AI-validated chains must propagate their AI fields onto
+    each finding's per-finding chain snapshot (taken before the AI ran), or
+    the report's chain-validation block stays empty. Exercises the real
+    pipeline rather than a copy of the propagation loop."""
 
-    def test_chain_propagation_match_logic(self):
-        """
-        Simulates the propagation block in enhance_findings_with_cross_file().
-        Given a finding with a snapshotted chain and a corresponding validated
-        chain, the AI fields must land on the finding's chain dict.
-        """
-        # The finding's per-finding snapshot uses full_entry_point/full_sink/chain_type
-        finding = {
-            'path': 'src/handler.py',
-            'cross_file_analysis': {
-                'potential_attack_chains': [
-                    {
-                        'chain_type': 'sql_injection',
-                        'full_entry_point': 'src/routes.py',
-                        'full_sink': 'src/db.py',
-                        'entry_point': 'routes.py',
-                        'sink': 'db.py',
-                    }
-                ]
-            }
+    def _finding(self, entry='src/routes.py', sink='src/db.py', ctype='sql_injection'):
+        return {
+            'path': 'src/handler.py', 'tool': 'semgrep', 'severity': 'high',
+            'cross_file_analysis': {'potential_attack_chains': [{
+                'chain_type': ctype, 'full_entry_point': entry, 'full_sink': sink,
+                'entry_point': Path(entry).name, 'sink': Path(sink).name,
+            }]},
         }
 
-        # The AI-validated chains use entry_point/sink/vulnerability_type
-        validated_chains = [
-            {
-                'entry_point': 'src/routes.py',
-                'sink': 'src/db.py',
-                'vulnerability_type': 'sql_injection',
-                'ai_validated': True,
-                'ai_exploitability': 'unsanitized user input flows to query',
-                'ai_confidence': 0.9,
-                'ai_bypasses_needed': [],
-            }
-        ]
+    def _run(self, monkeypatch, tmp_path, finding, validated):
+        import asyncio
+        from appsec_galaxy import enhanced_analyzer as ea
+        monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
 
-        # Execute the propagation block (mirrors enhanced_analyzer.py)
-        chain_lookup = {}
-        for vc in validated_chains:
-            key = (
-                vc.get('entry_point', ''),
-                vc.get('sink', ''),
-                vc.get('vulnerability_type', ''),
-            )
-            chain_lookup[key] = vc
+        class FakeAnalyzer:
+            def __init__(self, repo_path):
+                self.cross_file_analysis = {'attack_chains': []}
 
-        ai_chain_fields = (
-            'ai_validated', 'ai_exploitability', 'ai_confidence',
-            'ai_bypasses_needed', 'ai_severity_adjustment',
-            'ai_adjusted_severity',
-        )
-        cfa = finding.get('cross_file_analysis') or {}
-        for chain in cfa.get('potential_attack_chains', []):
-            key = (
-                chain.get('full_entry_point', ''),
-                chain.get('full_sink', ''),
-                chain.get('chain_type', ''),
-            )
-            vc = chain_lookup.get(key)
-            if vc is None:
-                continue
-            for field in ai_chain_fields:
-                if field in vc:
-                    chain[field] = vc[field]
+            async def analyze_codebase_context(self):
+                return None
 
-        # Assert the AI fields landed on the per-finding chain
-        propagated = finding['cross_file_analysis']['potential_attack_chains'][0]
-        assert propagated['ai_validated'] is True
-        assert propagated['ai_confidence'] == 0.9
-        assert 'unsanitized' in propagated['ai_exploitability']
+            async def analyze_cross_file_relationships(self):
+                return None
 
-    def test_chain_propagation_no_match_leaves_chain_alone(self):
-        """If no validated chain matches, the snapshot stays untouched."""
-        finding = {
-            'cross_file_analysis': {
-                'potential_attack_chains': [
-                    {
-                        'chain_type': 'xss',
-                        'full_entry_point': 'src/a.py',
-                        'full_sink': 'src/b.py',
-                    }
-                ]
-            }
-        }
-        validated_chains = [
-            {
-                'entry_point': 'src/x.py',
-                'sink': 'src/y.py',
-                'vulnerability_type': 'sqli',
-                'ai_validated': True,
-            }
-        ]
+            def enhance_vulnerability_analysis(self, findings):
+                return findings
 
-        chain_lookup = {
-            (vc['entry_point'], vc['sink'], vc['vulnerability_type']): vc
-            for vc in validated_chains
-        }
-        for chain in finding['cross_file_analysis']['potential_attack_chains']:
-            key = (
-                chain.get('full_entry_point', ''),
-                chain.get('full_sink', ''),
-                chain.get('chain_type', ''),
-            )
-            if key in chain_lookup:
-                chain['ai_validated'] = chain_lookup[key]['ai_validated']
+            def generate_enhanced_report(self, findings):
+                return {'pr_summary': ''}
 
-        # No match → no AI fields added
-        chain = finding['cross_file_analysis']['potential_attack_chains'][0]
+        monkeypatch.setattr(ea, 'CrossFileEnhancedAnalyzer', FakeAnalyzer)
+        import appsec_galaxy.ai_cross_file as acf
+        monkeypatch.setattr(acf, 'run_ai_cross_file_analysis', lambda f, c, r: {
+            'ai_enhanced': True, 'enhanced_findings': f, 'validated_chains': validated,
+            'summary': {},
+        })
+        enhanced, _report = asyncio.run(ea.run_cross_file_pipeline([finding], str(tmp_path)))
+        return enhanced[0]['cross_file_analysis']['potential_attack_chains'][0]
+
+    def test_matching_chain_receives_ai_fields(self, monkeypatch, tmp_path):
+        validated = [{
+            'entry_point': 'src/routes.py', 'sink': 'src/db.py',
+            'vulnerability_type': 'sql_injection', 'ai_validated': True,
+            'ai_exploitability': 'unsanitized user input flows to query',
+            'ai_confidence': 0.9, 'ai_bypasses_needed': [],
+        }]
+        chain = self._run(monkeypatch, tmp_path, self._finding(), validated)
+        assert chain['ai_validated'] is True
+        assert chain['ai_confidence'] == 0.9
+        assert 'unsanitized' in chain['ai_exploitability']
+
+    def test_non_matching_chain_is_left_alone(self, monkeypatch, tmp_path):
+        validated = [{
+            'entry_point': 'src/x.py', 'sink': 'src/y.py',
+            'vulnerability_type': 'sqli', 'ai_validated': True,
+        }]
+        chain = self._run(monkeypatch, tmp_path, self._finding(ctype='xss'), validated)
         assert 'ai_validated' not in chain
 
 
@@ -2753,7 +2727,10 @@ class TestAIExecutiveSummary:
     def test_returns_static_when_ai_disabled(self, monkeypatch):
         """When APPSEC_AI_SCAN is false, return the static summary unchanged."""
         monkeypatch.setenv('APPSEC_AI_SCAN', 'false')
+        from appsec_galaxy.reporting import ai_summary
         from appsec_galaxy.reporting.ai_summary import generate_ai_executive_summary
+        monkeypatch.setattr(ai_summary, '_get_ai_client_and_model',
+                            lambda: pytest.fail('AI disabled: no client may be built'))
 
         static = "Static summary text"
         result = generate_ai_executive_summary(
@@ -2767,7 +2744,10 @@ class TestAIExecutiveSummary:
         """Tier 1 (no AI) should return static summary."""
         monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
         monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '1')
+        from appsec_galaxy.reporting import ai_summary
         from appsec_galaxy.reporting.ai_summary import generate_ai_executive_summary
+        monkeypatch.setattr(ai_summary, '_get_ai_client_and_model',
+                            lambda: pytest.fail('tier 1 must not build a summary client'))
 
         static = "Tier 1 fallback"
         result = generate_ai_executive_summary(
@@ -2781,7 +2761,10 @@ class TestAIExecutiveSummary:
         """Empty findings should return static summary."""
         monkeypatch.setenv('APPSEC_AI_SCAN', 'true')
         monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '3')
+        from appsec_galaxy.reporting import ai_summary
         from appsec_galaxy.reporting.ai_summary import generate_ai_executive_summary
+        monkeypatch.setattr(ai_summary, '_get_ai_client_and_model',
+                            lambda: pytest.fail('no findings: no client may be built'))
 
         static = "No findings"
         result = generate_ai_executive_summary(
@@ -2969,6 +2952,9 @@ class TestPrivacyTierContract:
         monkeypatch.setattr(ai_summary, '_get_ai_client_and_model',
                             lambda: pytest.fail('tier 1 must not build an AI client (ai_summary)'))
 
+        # A source file must exist, or run_ai_scan returns [] from "no files
+        # to scan" and the sentinel below is never reached.
+        (tmp_path / 'app.py').write_text('def login(password): pass\n')
         assert ai_scanner.run_ai_scan(str(tmp_path), output_dir=str(tmp_path)) == []
 
         chains = [{'entry_point': 'a.py', 'sink': 'b.py'}]
@@ -3104,9 +3090,14 @@ class TestPrivacyTierSurfaces:
 
     def test_cli_picker_rejects_garbage_then_accepts(self, monkeypatch):
         from appsec_galaxy.main import select_privacy_tier
-        monkeypatch.delenv('APPSEC_AI_SCAN_TIER', raising=False)
+        # setenv (not delenv): select_privacy_tier writes the chosen tier into
+        # os.environ, and monkeypatch only restores variables it recorded, so
+        # delenv on an unset var would leak the value into later tests.
+        monkeypatch.setenv('APPSEC_AI_SCAN_TIER', '3')
+        monkeypatch.delenv('APPSEC_AI_SCAN_TIER')
         self._feed_input(monkeypatch, ['9', 'x', '3'])
         assert select_privacy_tier() == 3
+        assert os.environ['APPSEC_AI_SCAN_TIER'] == '3'
 
     def test_action_exposes_and_maps_the_tier_input(self):
         """action.yml must offer ai-scan-tier and wire it to the env var the
@@ -3971,6 +3962,51 @@ class TestWebAppSmoke:
         })
         assert response.status_code == 400
         assert 'privacy tier' in response.get_json()['error']
+
+    def test_api_key_gates_sensitive_routes_only(self, monkeypatch, tmp_path):
+        """With APPSEC_WEB_API_KEY set, scan and report routes need the header
+        while /health stays open for liveness probes."""
+        import sys
+        monkeypatch.setenv('APPSEC_WEB_API_KEY', 'correct-horse')
+        if 'appsec_galaxy.web_app' in sys.modules:
+            del sys.modules['appsec_galaxy.web_app']
+        from appsec_galaxy import web_app
+        web_app.app.config['TESTING'] = True
+        c = web_app.app.test_client()
+
+        assert c.get('/health').status_code == 200
+        assert c.post('/scan', json={'repo_path': str(tmp_path)}).status_code == 401
+        assert c.post('/scan', json={'repo_path': str(tmp_path)},
+                      headers={'X-API-Key': 'wrong'}).status_code == 401
+        assert c.get('/report').status_code == 401
+        # Correct key gets past auth (the request then fails on its own terms).
+        assert c.get('/report', headers={'X-API-Key': 'correct-horse'}).status_code != 401
+
+    @pytest.mark.parametrize("filename", [
+        '../../../etc/passwd', 'evil.json', 'report.html', '.env', 'raw/gitleaks.json',
+    ])
+    def test_reports_route_serves_only_allowlisted_names(self, client, monkeypatch, tmp_path, filename):
+        from appsec_galaxy import web_app
+        monkeypatch.setattr(web_app, 'LAST_SCAN_OUTPUT_DIR', str(tmp_path), raising=False)
+        assert client.get(f'/reports/{filename}').status_code in (403, 404)
+
+    def test_browse_dir_requires_a_path_and_rejects_files(self, client, monkeypatch, tmp_path):
+        monkeypatch.setenv('APPSEC_ENABLE_DIRECTORY_BROWSING', 'true')
+        assert client.get('/browse-dir').status_code == 400
+        target = tmp_path / 'a-file.txt'
+        target.write_text('x')
+        assert client.get(f'/browse-dir?path={target}').status_code == 400
+
+    def test_browse_dir_is_off_by_default(self, client, monkeypatch, tmp_path):
+        monkeypatch.delenv('APPSEC_ENABLE_DIRECTORY_BROWSING', raising=False)
+        response = client.get(f'/browse-dir?path={tmp_path}')
+        assert response.status_code == 403
+        assert 'disabled' in response.get_json()['error']
+
+    def test_report_route_404s_before_any_scan(self, client, monkeypatch):
+        from appsec_galaxy import web_app
+        monkeypatch.setattr(web_app, 'LAST_SCAN_OUTPUT_DIR', None, raising=False)
+        assert client.get('/report').status_code == 404
 
     def test_unknown_route_returns_404(self, client):
         response = client.get('/this-route-does-not-exist-xyz')

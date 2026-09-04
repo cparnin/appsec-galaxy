@@ -649,3 +649,67 @@ def test_requirements_txt_matches_pyproject_runtime_dependencies():
         (root / "requirements.txt").read_text(encoding="utf-8").splitlines())
     # Test-only packages belong in the dev extra, not the runner's install.
     assert "pytest" not in (root / "requirements.txt").read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Remediation safety gates (protected files, secrets, single-line contract)
+# ---------------------------------------------------------------------------
+
+def _remediator():
+    r = remediation.AutoRemediator.__new__(remediation.AutoRemediator)
+    r._logged_unsupported_types = set()
+    r._client = None
+    return r
+
+
+@pytest.mark.parametrize("path", [
+    ".github/workflows/ci.yml",
+    ".github/actions/setup/action.yml",
+    "action.yml",
+    ".gitlab-ci.yml",
+    "Jenkinsfile",
+    ".circleci/config.yml",
+])
+def test_protected_files_are_never_remediable(path):
+    """Auto-fix must not edit CI/CD definitions: a fix there changes what
+    runs in the pipeline, not what the application does."""
+    finding = {"tool": "semgrep", "check_id": "python.lang.security.injection",
+               "path": path, "extra": {"message": "sql injection"}}
+    assert _remediator().can_remediate(finding) is False
+
+
+@pytest.mark.parametrize("check_id", [
+    "generic.secrets.security.detected-generic-api-key",
+    "javascript.lang.security.detected-jwt-token",
+    "python.lang.security.hardcoded-password",
+])
+def test_secret_findings_are_never_remediable(check_id):
+    """Secrets need rotation, not a one-line replacement, and the fix prompt
+    would carry the credential to the AI provider."""
+    finding = {"tool": "semgrep", "check_id": check_id, "path": "app.py",
+               "extra": {"message": "hardcoded secret"}}
+    assert _remediator().can_remediate(finding) is False
+
+
+def test_non_semgrep_findings_are_never_remediable():
+    for tool in ("gitleaks", "trivy", "pylint", "ai_scan"):
+        assert _remediator().can_remediate({"tool": tool, "check_id": "x.injection",
+                                            "path": "app.py", "extra": {}}) is False
+
+
+def test_a_real_injection_finding_is_remediable():
+    finding = {"tool": "semgrep", "check_id": "python.django.security.sql-injection",
+               "path": "app/views.py", "extra": {"message": "SQL injection"}}
+    assert _remediator().can_remediate(finding) is True
+
+
+def test_apply_fix_refuses_to_write_outside_the_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "app.py").write_text("x = 1\n")
+    outside = tmp_path / "outside.py"
+    outside.write_text("keep = True\n")
+    fix = {"file_path": "../outside.py", "line_number": 1, "original_line": "keep = True",
+           "fixed_line": "keep = False", "check_id": "x"}
+    assert _remediator().apply_fix(fix, str(repo)) is False
+    assert outside.read_text() == "keep = True\n"
