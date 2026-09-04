@@ -37,6 +37,11 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
+    # HTTP client libraries log every request at INFO; keep them quiet
+    # unless debug mode is on.
+    for noisy in ('httpx', 'httpcore', 'openai', 'anthropic', 'urllib3'):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
     # Optional file handler
     if log_file:
         try:

@@ -233,7 +233,7 @@ loudly on bad values. Key groups:
   2 metadata only, 3 full source), `APPSEC_AI_SCAN_MAX_COST` (hard USD
   ceiling; 0/unset uncapped), `APPSEC_AI_CROSS_FILE_MAX_*` cost caps
 - Scanning: `APPSEC_SCAN_LEVEL` (security), `APPSEC_CODE_QUALITY_MIN_SEVERITY`
-  (quality; independent filters), `APPSEC_TOOLS`, `APPSEC_DIFF_ONLY`/`_BASE`,
+  (quality; independent filters), `APPSEC_DIFF_ONLY`/`_BASE`,
   `APPSEC_SEMGREP_CONFIG` (pinned rulesets, default `p/default`; `auto`
   restores dynamic selection), `APPSEC_TRIVY_SCANNERS` (default
   `vuln,misconfig`; `vuln` reverts to dependency CVEs only)

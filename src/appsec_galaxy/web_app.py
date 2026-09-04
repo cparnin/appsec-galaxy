@@ -13,7 +13,6 @@ Usage:
 import os
 import sys
 import json
-import asyncio
 import subprocess
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
@@ -29,17 +28,19 @@ from appsec_galaxy.main import (
     validate_repo_path,
     validate_environment_config,
     run_security_scans,
+    finalize_scan,
     handle_auto_remediation,
     track_usage
 )
-from appsec_galaxy.reporting.html import generate_html_report
-from appsec_galaxy.reporting.ai_summary import build_fallback_summary, compute_summary_stats
+import threading
+from appsec_galaxy.reporting.ai_summary import compute_summary_stats
 
 # Import path utilities for multi-repo output structure
 from appsec_galaxy.path_utils import (
     get_output_path, cleanup_old_scans, setup_output_directories
 )
 from appsec_galaxy.config import BASE_OUTPUT_DIR
+from appsec_galaxy import __version__
 from appsec_galaxy.project_paths import IMAGES_DIR
 
 # Configure logging for web app
@@ -60,6 +61,10 @@ if cors_origins:
 # Global config (same as CLI)
 WEB_CONFIG = None
 LAST_SCAN_OUTPUT_DIR = None  # Track most recent scan output directory
+# Per-scan settings travel through os.environ (shared by the CLI core), so
+# two concurrent /scan requests would read each other's provider, tier, and
+# scan level. One scan at a time; a second request waits its turn.
+_SCAN_LOCK = threading.Lock()
 
 
 def _is_sensitive_endpoint() -> bool:
@@ -180,7 +185,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'AppSec Galaxy Web API',
-        'version': '1.0.0'
+        'version': __version__
     })
 
 @app.route('/config', methods=['GET'])
@@ -221,6 +226,12 @@ def get_config():
 
 @app.route('/scan', methods=['POST'])
 def scan_repository():
+    """One scan at a time (see _SCAN_LOCK); the body lives in _scan_locked."""
+    with _SCAN_LOCK:
+        return _scan_locked()
+
+
+def _scan_locked():
     """
     Main scanning endpoint that calls existing CLI functions.
 
@@ -307,6 +318,10 @@ def scan_repository():
         except (ValueError, PermissionError) as e:
             return jsonify({'error': f'Invalid repository path: {str(e)}'}), 400
 
+        # Validate the server's own configuration BEFORE this request's
+        # settings are written into the environment (the result is cached).
+        init_web_config()
+
         # Set environment variables for this scan
         original_scan_level = os.environ.get('APPSEC_SCAN_LEVEL')
         original_auto_fix = os.environ.get('APPSEC_AUTO_FIX')
@@ -365,9 +380,6 @@ def scan_repository():
             # Track usage for IP monitoring
             track_usage()
 
-            # Initialize config
-            init_web_config()
-
             # Set up output directory for repository
             output_path = get_output_path(str(validated_path), BASE_OUTPUT_DIR)
 
@@ -400,90 +412,12 @@ def scan_repository():
             # Use existing scanning function with selected scanners
             all_findings = run_security_scans(str(validated_path), scanners_to_run, output_dir, scan_level)
 
-            # Add cross-file analysis enhancement like CLI mode does
-            enhanced_findings = all_findings
-            try:
-                from appsec_galaxy.enhanced_analyzer import enhance_findings_with_cross_file
-                if all_findings:
-                    print("🧠 Running cross-file enhancement analysis...")
-                    enhanced_findings = asyncio.run(enhance_findings_with_cross_file(all_findings, str(validated_path)))
-                    print(f"✅ Cross-file enhanced {len(enhanced_findings)} findings with context analysis")
-            except ImportError:
-                print("⚠️ Cross-file analysis integration not available")
-            except Exception as e:
-                print(f"⚠️ Cross-file enhancement failed: {e}")
-                enhanced_findings = all_findings
-
-            # Generate reports using existing functions
-            html_report_path = None
-            if enhanced_findings:
-                ai_summary = build_fallback_summary(enhanced_findings)
-
-                # Run dependency code-path analysis
-                dep_health_data_web = None
-                try:
-                    from appsec_galaxy.dependency_analyzer import run_dependency_analysis
-                    from appsec_galaxy.config import ENABLE_DEPENDENCY_ANALYSIS
-                    if ENABLE_DEPENDENCY_ANALYSIS:
-                        trivy_web = [f for f in enhanced_findings if f.get('tool') == 'trivy'
-                                     and f.get('finding_type') != 'misconfiguration']
-                        dep_health_data_web = run_dependency_analysis(str(validated_path), trivy_findings=trivy_web)
-                        from appsec_galaxy.vuln_intel import apply_reachability
-                        apply_reachability(enhanced_findings, dep_health_data_web)
-                        if dep_health_data_web and dep_health_data_web.analyzed_dependencies > 0:
-                            print(f"📦 Analyzed {dep_health_data_web.analyzed_dependencies} dependencies")
-                            dep_out = output_dir / "raw" / "dependency-health.json"
-                            dep_out.parent.mkdir(parents=True, exist_ok=True)
-                            import json as json_mod
-                            # Filename is a constant; the parent dir was boundary-checked
-                            # at output_dir construction (must resolve under BASE_OUTPUT_DIR).
-                            # Semgrep taint-tracks the request->validated_path->output_dir
-                            # chain but cannot see the runtime invariant.
-                            with open(dep_out, 'w') as df:  # nosemgrep: python.flask.file.tainted-path-traversal-stdlib-flask.tainted-path-traversal-stdlib-flask
-                                json_mod.dump(dep_health_data_web.to_dict(), df, indent=2)
-                except ImportError:
-                    pass
-                except Exception as dep_err:
-                    logger.warning(f"Dependency analysis failed: {dep_err}")
-
-                html_report_path = generate_html_report(enhanced_findings, ai_summary, str(output_dir), str(validated_path), dep_health_data=dep_health_data_web)
-
-                # Generate PR summary like CLI does
-                try:
-                    pr_summary_path = output_dir / "pr-findings.txt"
-                    # Constant filename inside boundary-checked output_dir; see above.
-                    with open(pr_summary_path, 'w') as f:  # nosemgrep: python.flask.file.tainted-path-traversal-stdlib-flask.tainted-path-traversal-stdlib-flask
-                        f.write(f"Security Scan Results for {validated_path.name}\n")
-                        f.write("=" * 50 + "\n\n")
-                        f.write(ai_summary)
-                        if len(enhanced_findings) > 0:
-                            f.write("\n\nDetailed Findings:\n")
-                            for i, finding in enumerate(enhanced_findings[:10], 1):  # Limit to top 10
-                                f.write(f"{i}. {finding.get('extra', {}).get('message', 'Security issue')} ")
-                                f.write(f"({finding.get('severity', 'unknown')} - {finding.get('tool', 'scanner')})\n")
-                except Exception as e:
-                    logger.warning(f"Could not generate PR summary: {e}")
-            else:
-                ai_summary = "🎉 Security scan completed successfully with no critical or high-severity issues found."
-                html_report_path = generate_html_report([], ai_summary, str(output_dir), str(validated_path), dep_health_data=None)
-
-            # Generate SBOM if user selected it
-            if run_sbom:
-                try:
-                    from appsec_galaxy.sbom_generator import generate_repository_sbom
-                    print("🔧 Generating SBOM...")
-                    sbom_result = asyncio.run(generate_repository_sbom(str(validated_path), str(output_dir / "sbom")))
-                    print("✅ SBOM generated successfully")
-                    logger.info(f"SBOM generation results: {sbom_result}")
-                except ImportError as e:
-                    logger.error(f"SBOM generator module not found: {e}")
-                except Exception as e:
-                    logger.error(f"SBOM generation failed: {e}")
-                    # Continue with scan even if SBOM fails
+            enhanced_findings = finalize_scan(all_findings, str(validated_path), output_dir, run_sbom=run_sbom)
+            html_report_path = output_dir / "report.html"
 
             # Handle auto-remediation non-interactively
             remediation_results = None
-            if auto_fix and all_findings:
+            if auto_fix and enhanced_findings:
 
                 # Set environment variables for non-interactive mode.
                 # APPSEC_WEB_MODE is an internal process marker (set and
@@ -493,7 +427,7 @@ def scan_repository():
                 os.environ['APPSEC_AUTO_FIX_MODE'] = str(auto_fix_mode)
                 try:
                     print("🔧 Starting auto-remediation...")
-                    remediation_results = handle_auto_remediation(str(validated_path), all_findings)
+                    remediation_results = handle_auto_remediation(str(validated_path), enhanced_findings)
                     if remediation_results.get("success"):
                         print("✅ Auto-remediation completed")
                     else:
@@ -515,13 +449,13 @@ def scan_repository():
 
             # Same counting as the HTML report tiles (security findings only)
             # so the web cards never disagree with the report they link to.
-            response_stats = compute_summary_stats(all_findings)
+            response_stats = compute_summary_stats(enhanced_findings)
             response = {
                 'success': True,
                 'scan_id': scan_id,  # Add unique scan ID for cache-busting
                 'scan_timestamp': int(time.time()),  # Add timestamp
                 'scan_summary': {
-                    'total_findings': len(all_findings),
+                    'total_findings': len(enhanced_findings),
                     'critical_findings': response_stats['critical'],
                     'high_findings': response_stats['high'],
                     'repository_path': str(validated_path),
@@ -529,15 +463,15 @@ def scan_repository():
                     'scan_level': scan_level,
                     'auto_fix_enabled': auto_fix
                 },
-                'findings': all_findings,
-                'html_report_available': html_report_path is not None,
+                'findings': enhanced_findings,
+                'html_report_available': html_report_path.exists(),
                 'remediation_applied': remediation_results is not None
             }
 
             if remediation_results:
                 response['remediation_summary'] = remediation_results
 
-            logger.info(f"✅ Web scan completed: {len(all_findings)} findings")
+            logger.info(f"✅ Web scan completed: {len(enhanced_findings)} findings")
             return jsonify(response)
 
         finally:
@@ -578,7 +512,8 @@ def get_html_report():
         import os
         mtime = os.path.getmtime(report_path)
         response.headers['ETag'] = f'"{mtime}"'
-        response.headers['Last-Modified'] = report_path.stat().st_mtime
+        from email.utils import formatdate
+        response.headers['Last-Modified'] = formatdate(report_path.stat().st_mtime, usegmt=True)
 
         return response
 
@@ -811,7 +746,7 @@ def discover_repositories():
         # Add custom search paths from env
         custom_paths = os.getenv('REPO_SEARCH_PATHS', '')
         if custom_paths:
-            for p in custom_paths.split(','):
+            for p in custom_paths.split(':'):
                 p = p.strip()
                 if p:
                     search_paths.append(Path(p))
@@ -938,5 +873,5 @@ if __name__ == '__main__':
     app.run(
         host=host,  # Accept connections from configured interface
         port=port,
-        debug=os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+        debug=os.environ.get('APPSEC_DEBUG', 'false').lower() == 'true'
     )

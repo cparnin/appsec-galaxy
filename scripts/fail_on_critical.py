@@ -2,10 +2,14 @@
 """
 Post-scan gate: exits non-zero if critical-or-above findings exist.
 
-Reads raw scanner outputs from outputs/raw/ and counts:
-  - Semgrep findings with severity ERROR or CRITICAL
-  - Trivy vulnerabilities with severity CRITICAL
-  - Any Gitleaks leaks (every leak is treated as critical)
+Reads raw scanner outputs from outputs/<repo>/raw/ and counts, honoring the
+repo's .appsec-galaxy-ignore baseline:
+  - Semgrep findings at severity CRITICAL (plus HIGH/ERROR when
+    APPSEC_FAIL_THRESHOLD=high)
+  - Trivy vulnerabilities at severity CRITICAL (plus HIGH at threshold high)
+  - Any Gitleaks leak (every leak is treated as critical)
+Raw output is unfiltered by APPSEC_DIFF_ONLY: the gate judges the whole
+repository even when the report is scoped to changed files.
 
 Used by GitHub Actions to fail the build when
 real risks land. Does not change the scan itself, just inspects its

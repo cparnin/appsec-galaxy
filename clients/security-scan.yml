@@ -15,9 +15,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  security-events: write
+  contents: write        # auto-fix branches
+  pull-requests: write   # auto-fix PRs and the scan comment
 
 jobs:
   security-scan:
@@ -61,23 +60,28 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
         with:
           script: |
-            const totalFindings = '${{ steps.scanner.outputs.total-findings }}';
-            const criticalFindings = '${{ steps.scanner.outputs.critical-findings }}';
-            const highFindings = '${{ steps.scanner.outputs.high-findings }}';
-            const secretsFound = '${{ steps.scanner.outputs.secrets-found }}';
-            
+            const outcome = '${{ steps.scanner.outcome }}';
+            const totalFindings = parseInt('${{ steps.scanner.outputs.total-findings }}');
+            const criticalFindings = parseInt('${{ steps.scanner.outputs.critical-findings }}');
+            const highFindings = parseInt('${{ steps.scanner.outputs.high-findings }}');
+            const secretsFound = parseInt('${{ steps.scanner.outputs.secrets-found }}');
+
             let comment = '## 🔒 Security Scan Results\n\n';
-            comment += `**Total Findings:** ${totalFindings}\n`;
-            comment += `**Critical:** ${criticalFindings}\n`;
-            comment += `**High:** ${highFindings}\n`;
-            comment += `**Secrets:** ${secretsFound}\n\n`;
-            
-            if (parseInt(criticalFindings) > 0 || parseInt(secretsFound) > 0) {
-              comment += '❌ **Action Required:** Critical security issues found!\n\n';
-            } else if (parseInt(highFindings) > 0) {
-              comment += '⚠️ **Review Recommended:** High severity issues found.\n\n';
+            if (outcome !== 'success' || Number.isNaN(totalFindings)) {
+              // A crashed or timed-out scan has no counts; never report it as clear.
+              comment += `❌ **Scan did not complete** (step outcome: ${outcome}). Check the run logs.\n\n`;
             } else {
-              comment += '✅ **All Clear:** No critical security issues detected.\n\n';
+              comment += `**Total Findings:** ${totalFindings}\n`;
+              comment += `**Critical:** ${criticalFindings}\n`;
+              comment += `**High:** ${highFindings}\n`;
+              comment += `**Secrets:** ${secretsFound}\n\n`;
+              if (criticalFindings > 0 || secretsFound > 0) {
+                comment += '❌ **Action Required:** Critical security issues found!\n\n';
+              } else if (highFindings > 0) {
+                comment += '⚠️ **Review Recommended:** High severity issues found.\n\n';
+              } else {
+                comment += '✅ **All Clear:** No critical security issues detected.\n\n';
+              }
             }
             
             comment += `📊 [View detailed reports](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n`;

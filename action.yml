@@ -161,13 +161,14 @@ runs:
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         AI_MODEL: ${{ inputs.ai-model }}
-        # Force auto-fix off on FORK pull requests: that checkout is code from
-        # someone outside the repo, and remediation commits/pushes/opens a PR.
+        # Force auto-fix off on FORK pull requests (head repo differs from the
+        # repo running the workflow): that checkout is code from someone
+        # outside the repo, and remediation commits/pushes/opens a PR.
         # Same-repo PRs, push, and workflow_dispatch honor the input. The
         # scanner also enforces this internally (is_untrusted_pr_context); this
         # is the outer layer so the fork branch is never even a candidate.
-        APPSEC_AUTO_FIX: ${{ github.event.pull_request.head.repo.fork && 'false' || inputs.auto-fix }}
-        APPSEC_AUTO_FIX_MODE: ${{ github.event.pull_request.head.repo.fork && '4' || inputs.auto-fix-mode }}
+        APPSEC_AUTO_FIX: ${{ (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository) && 'false' || inputs.auto-fix }}
+        APPSEC_AUTO_FIX_MODE: ${{ (github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository) && '4' || inputs.auto-fix-mode }}
         APPSEC_SCAN_LEVEL: ${{ inputs.scan-level }}
         APPSEC_CODE_QUALITY: ${{ inputs.code-quality }}
         APPSEC_DEPENDENCY_ANALYSIS: ${{ inputs.dependency-analysis }}
@@ -175,8 +176,8 @@ runs:
         APPSEC_AI_SCAN_DEPTH: ${{ inputs.ai-scan-depth }}
         APPSEC_AI_SCAN_TIER: ${{ inputs.ai-scan-tier }}
         APPSEC_AI_SCAN_MAX_COST: ${{ inputs.ai-scan-max-cost }}
-        APPSEC_DEBUG: true
-        APPSEC_LOG_LEVEL: DEBUG
+        # APPSEC_DEBUG / APPSEC_LOG_LEVEL are deliberately NOT set here so a
+        # caller's `env:` on the step can enable them (step env would win).
       run: |
         cd ${{ github.action_path }}
         python -m appsec_galaxy.main
@@ -213,13 +214,18 @@ runs:
         fi
 
         if [ -f "$trivy_file" ]; then
-          # Counts dependency CVEs and IaC misconfigurations (both live in Results[])
-          trivy_count=$(jq '[.Results[]? | (.Vulnerabilities[]?, .Misconfigurations[]?) | (.Severity // "") | ascii_downcase | select(. == "critical" or . == "high")] | length' "$trivy_file" 2>/dev/null || echo "0")
+          # Dependency CVEs and IaC misconfigurations (both live in Results[]),
+          # counted per severity so critical CVEs reach critical-findings.
+          trivy_critical=$(jq '[.Results[]? | (.Vulnerabilities[]?, .Misconfigurations[]?) | (.Severity // "") | ascii_downcase | select(. == "critical")] | length' "$trivy_file" 2>/dev/null || echo "0")
+          trivy_high=$(jq '[.Results[]? | (.Vulnerabilities[]?, .Misconfigurations[]?) | (.Severity // "") | ascii_downcase | select(. == "high")] | length' "$trivy_file" 2>/dev/null || echo "0")
         else
-          trivy_count=0
+          trivy_critical=0
+          trivy_high=0
         fi
 
-        total_findings=$((total_sast + secrets_count + trivy_count))
+        critical_count=$((critical_count + trivy_critical))
+        high_count=$((high_count + trivy_high))
+        total_findings=$((total_sast + secrets_count + trivy_critical + trivy_high))
 
         {
           echo "total-findings=$total_findings"

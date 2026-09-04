@@ -92,7 +92,6 @@ GIT_DIFF_CONTEXT_LINES = 3  # Lines of context around changes
 # fail loudly at startup with a clear message instead of being silently
 # coerced or defaulted. Module-level constant names below are unchanged, so
 # all existing `from config import X` imports keep working.
-import os
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -186,56 +185,6 @@ TRIVY_SCANNERS = settings.trivy_scanners
 # invited inconsistency (the value was previously read in two places with
 # the same default).
 AI_SCAN_MIN_CONFIDENCE = 0.7
-
-# Tool Selection (CLI/Web only - MCP and CI/CD always run all)
-# Parse APPSEC_TOOLS environment variable
-# Format: comma-separated list (e.g., "semgrep,gitleaks,trivy")
-# Valid options: semgrep, trivy, gitleaks, code_quality, sbom, ai_scan, all
-def parse_tool_selection(tools_string: str | None = None) -> set:
-    """
-    Parse and validate tool selection from environment or parameter.
-
-    Args:
-        tools_string: Comma-separated tool names, defaults to APPSEC_TOOLS env var
-
-    Returns:
-        set: Set of validated tool names
-    """
-    if tools_string is None:
-        tools_string = os.getenv('APPSEC_TOOLS', 'all')
-
-    # Normalize and split
-    tools_string = tools_string.lower().strip()
-
-    # If 'all', return all tools
-    if tools_string == 'all':
-        all_tools = {'semgrep', 'trivy', 'gitleaks', 'code_quality', 'sbom'}
-        if ENABLE_AI_SCAN:
-            all_tools.add('ai_scan')
-        return all_tools
-
-    # Parse individual tools
-    tools = set()
-    valid_tools = {'semgrep', 'trivy', 'gitleaks', 'code_quality', 'sbom', 'ai_scan'}
-
-    for tool in tools_string.split(','):
-        tool = tool.strip()
-        if tool in valid_tools:
-            tools.add(tool)
-        elif tool:  # Only warn if non-empty
-            import logging
-            logging.warning(f"Invalid tool '{tool}' ignored. Valid options: {', '.join(sorted(valid_tools))}")
-
-    # Ensure at least one tool is selected
-    if not tools:
-        import logging
-        logging.warning("No valid tools selected, defaulting to 'all'")
-        return {'semgrep', 'trivy', 'gitleaks', 'code_quality', 'sbom'}
-
-    return tools
-
-# Default tool selection for current session
-SELECTED_TOOLS = parse_tool_selection()
 
 # AI temperature for fix generation. Hardcoded at 0.0: any other value
 # breaks deterministic fixes, which is the whole point of auto-remediation.

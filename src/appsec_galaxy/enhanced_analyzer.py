@@ -877,21 +877,14 @@ class CrossFileEnhancedAnalyzer:
         return recommendations
 
 
-async def enhance_findings_with_cross_file(findings: list[dict[str, Any]], repo_path: str) -> list[dict[str, Any]]:
-    """
-    Enhance vulnerability findings using cross-file analysis.
+async def run_cross_file_pipeline(findings: list[dict[str, Any]], repo_path: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Run rule-based and (when APPSEC_AI_SCAN=true) AI cross-file analysis
+    ONCE and return (enhanced_findings, enhanced_report).
 
-    Two layers:
-    1. Rule-based: AST/regex analysis of entry points, sinks, attack chains (always runs)
-    2. AI-powered: LLM validates chains, correlates findings, checks sanitization
-       (only runs when APPSEC_AI_SCAN=true)
-
-    Args:
-        findings: List of vulnerability findings
-        repo_path: Path to the repository
-
-    Returns:
-        Enhanced findings with cross-file analysis context
+    The report (risk assessment, PR summary, attack chains) is built from the
+    same analyzer instance, so the AI chain validation is never repeated for
+    the report. Rule-based results are preserved when the AI layer fails;
+    the original findings are returned when the whole analysis fails.
     """
     try:
         analyzer = CrossFileEnhancedAnalyzer(repo_path)
@@ -965,67 +958,45 @@ async def enhance_findings_with_cross_file(findings: list[dict[str, Any]], repo_
         except Exception as e:
             logger.warning(f"AI cross-file enhancement failed (rule-based results preserved): {e}")
 
-        return enhanced_findings
+        report = analyzer.generate_enhanced_report(enhanced_findings)
+        if analyzer.cross_file_analysis:
+            report["cross_file_analysis"] = analyzer.cross_file_analysis
+            ai_summary = analyzer.cross_file_analysis.get('ai_summary')
+            if ai_summary:
+                report['ai_cross_file'] = ai_summary
+        return enhanced_findings, report
 
     except Exception as e:
         logger.error(f"Failed to enhance findings with cross-file analysis: {e}")
-        return findings
+        return findings, {"error": str(e)}
 
-async def generate_cross_file_enhanced_report(findings: list[dict[str, Any]], repo_path: str) -> dict[str, Any]:
+
+async def enhance_findings_with_cross_file(findings: list[dict[str, Any]], repo_path: str) -> list[dict[str, Any]]:
     """
-    Generate an enhanced security report using cross-file analysis.
+    Enhance vulnerability findings using cross-file analysis.
 
-    Includes AI-powered insights when APPSEC_AI_SCAN=true.
+    Two layers:
+    1. Rule-based: AST/regex analysis of entry points, sinks, attack chains (always runs)
+    2. AI-powered: LLM validates chains, correlates findings, checks sanitization
+       (only runs when APPSEC_AI_SCAN=true)
 
     Args:
         findings: List of vulnerability findings
         repo_path: Path to the repository
 
     Returns:
-        Enhanced security report
+        Enhanced findings with cross-file analysis context
     """
-    try:
-        analyzer = CrossFileEnhancedAnalyzer(repo_path)
+    enhanced, _report = await run_cross_file_pipeline(findings, repo_path)
+    return enhanced
 
-        # Analyze codebase context
-        await analyzer.analyze_codebase_context()
 
-        # Perform cross-file analysis
-        await analyzer.analyze_cross_file_relationships()
+async def generate_cross_file_enhanced_report(findings: list[dict[str, Any]], repo_path: str) -> dict[str, Any]:
+    """Enhanced security report (risk assessment, PR summary, attack chains).
 
-        # Generate enhanced report
-        report = analyzer.generate_enhanced_report(findings)
-
-        # Add cross-file analysis to the report
-        if analyzer.cross_file_analysis:
-            report["cross_file_analysis"] = analyzer.cross_file_analysis
-
-        # Add AI cross-file insights if available
-        try:
-            import os
-            import asyncio
-            ai_enabled = os.getenv('APPSEC_AI_SCAN', 'false').lower() == 'true'
-            if ai_enabled and analyzer.cross_file_analysis:
-                from appsec_galaxy.ai_cross_file import run_ai_cross_file_analysis
-
-                attack_chains = analyzer.cross_file_analysis.get('attack_chains', [])
-                ai_result = await asyncio.to_thread(
-                    run_ai_cross_file_analysis,
-                    findings, attack_chains, repo_path
-                )
-
-                if ai_result.get('ai_enhanced'):
-                    report['ai_cross_file'] = ai_result.get('summary', {})
-                    report['cross_file_analysis']['attack_chains'] = ai_result['validated_chains']
-                    report['cross_file_analysis']['ai_summary'] = ai_result.get('summary', {})
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.warning(f"AI cross-file enhancement for report failed: {e}")
-
-        logger.info("🧠 Generated cross-file enhanced security report")
-        return report
-
-    except Exception as e:
-        logger.error(f"Failed to generate cross-file enhanced report: {e}")
-        return {"error": str(e)}
+    Prefer run_cross_file_pipeline() when you also need the enhanced
+    findings: this convenience wrapper runs the full analysis, AI layer
+    included, on its own.
+    """
+    _enhanced, report = await run_cross_file_pipeline(findings, repo_path)
+    return report

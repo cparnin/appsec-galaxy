@@ -51,7 +51,6 @@ load_dotenv()
 
 from pathlib import Path
 import argparse
-import logging
 import os
 
 # Setup logging early
@@ -118,24 +117,6 @@ try:
 except ImportError:
     SWIFTLINT_AVAILABLE = False
 
-# Configure logging for minimal output
-logging.basicConfig(
-    level=logging.ERROR,  # Only show errors
-    format='%(message)s'  # Simple format
-)
-
-# Reduce noise from all libraries and scanners
-logging.getLogger("httpx").setLevel(logging.ERROR)
-logging.getLogger("openai").setLevel(logging.ERROR)
-logging.getLogger("urllib3").setLevel(logging.ERROR)
-logging.getLogger("auto_remediation").setLevel(logging.ERROR)
-logging.getLogger("sbom_generator").setLevel(logging.ERROR)
-logging.getLogger("enhanced_analyzer").setLevel(logging.ERROR)
-logging.getLogger("appsec_galaxy.scanners.trivy").setLevel(logging.ERROR)
-logging.getLogger("appsec_galaxy.scanners.semgrep").setLevel(logging.ERROR)
-logging.getLogger("appsec_galaxy.scanners.gitleaks").setLevel(logging.ERROR)
-logging.getLogger("reporting.html").setLevel(logging.ERROR)
-
 logger = get_logger(__name__)
 
 def validate_repo_path(repo_path: str) -> Path:
@@ -174,17 +155,9 @@ def validate_repo_path(repo_path: str) -> Path:
         raise ValueError("Repository path too long (max 4096 characters)")
 
     try:
+        # The resolved path is what every later check (existence, allowed
+        # roots) operates on, so ".." segments need no separate heuristic.
         path = Path(clean_path).resolve()
-
-        # Additional path traversal protection
-        # Ensure resolved path doesn't escape expected boundaries
-        if '..' in clean_path:
-            # Check if the resolved path significantly differs from input (potential traversal)
-            original_parts = Path(clean_path).parts
-            resolved_parts = path.parts
-            if len(resolved_parts) < len(original_parts) - clean_path.count('..'):
-                raise ValueError("Path traversal attempt detected")
-
     except (OSError, ValueError) as e:
         raise ValueError(f"Invalid repository path format: {e}") from e
 
@@ -245,6 +218,17 @@ def validate_repo_path(repo_path: str) -> Path:
 
     return path
 
+def resolve_scan_level() -> str:
+    """APPSEC_SCAN_LEVEL, sanitized. An unknown value falls back to
+    'critical-high' with a warning; it must never reach semgrep's severity
+    filter, which would match nothing and report a clean scan."""
+    scan_level = os.getenv('APPSEC_SCAN_LEVEL', 'critical-high').strip().lower()
+    if scan_level not in ('critical-high', 'all'):
+        logger.warning(f"Invalid scan level '{scan_level}', defaulting to 'critical-high'")
+        return 'critical-high'
+    return scan_level
+
+
 def validate_environment_config() -> dict[str, Any]:
     """
     Validate environment configuration and return sanitized values.
@@ -274,23 +258,7 @@ def validate_environment_config() -> dict[str, Any]:
     ai_provider = _get_ai_provider()
     config['ai_provider'] = ai_provider
 
-    # Validate scan level
-    scan_level = os.getenv('APPSEC_SCAN_LEVEL', 'critical-high').strip().lower()
-    if scan_level not in ['critical-high', 'all']:
-        logger.warning(f"Invalid scan level '{scan_level}', defaulting to 'critical-high'")
-        scan_level = 'critical-high'
-    config['scan_level'] = scan_level
-
-    # Validate hourly rate (must be positive number)
-    try:
-        hourly_rate = float(os.getenv('SECURITY_ENGINEER_HOURLY_RATE', '150'))
-        if hourly_rate <= 0 or hourly_rate > 1000:  # Reasonable range
-            logger.warning(f"Hourly rate {hourly_rate} seems unrealistic, using default $150")
-            hourly_rate = 150.0
-        config['hourly_rate'] = hourly_rate
-    except ValueError:
-        logger.warning("Invalid hourly rate format, using default $150")
-        config['hourly_rate'] = 150.0
+    config['scan_level'] = resolve_scan_level()
 
     # Record key presence without retaining or logging its value. The key
     # env var depends on the configured provider (OPENAI_API_KEY or
@@ -336,7 +304,7 @@ def is_untrusted_pr_context() -> bool:
     (GITHUB_EVENT_NAME / GITHUB_EVENT_PATH). Fails closed: a pull_request
     event whose payload cannot be read is treated as a fork.
     """
-    if os.getenv('GITHUB_EVENT_NAME') != 'pull_request':
+    if os.getenv('GITHUB_EVENT_NAME') not in ('pull_request', 'pull_request_target'):
         return False
     event_path = os.getenv('GITHUB_EVENT_PATH', '')
     if not event_path or not os.path.exists(event_path):
@@ -344,8 +312,16 @@ def is_untrusted_pr_context() -> bool:
     try:
         with open(event_path, encoding='utf-8') as f:
             event = json.load(f)
-        return bool(event.get('pull_request', {}).get('head', {}).get('repo', {}).get('fork'))
-    except (OSError, ValueError):
+        head_repo = event.get('pull_request', {}).get('head', {}).get('repo') or {}
+        # "Is the head a different repository than the one running the
+        # workflow?" (head.repo.fork only says whether that repo is itself a
+        # fork of something, which is true for every PR in a forked project.)
+        base_repo = os.getenv('GITHUB_REPOSITORY') or event.get('repository', {}).get('full_name')
+        head_name = head_repo.get('full_name')
+        if not head_name or not base_repo:
+            return True  # cannot establish the relationship: fail closed
+        return head_name.lower() != str(base_repo).lower()
+    except (OSError, ValueError, AttributeError):
         return True  # unparseable payload: fail closed
 
 def _classify_dir(dir_path: str) -> str:
@@ -528,7 +504,7 @@ def run_security_scans(repo_path: str, scanners_to_run: list[str], output_dir: P
         scan_level: Scan level ('critical-high' or 'all'), defaults to env var or 'critical-high'
     """
     if scan_level is None:
-        scan_level = os.getenv('APPSEC_SCAN_LEVEL', 'critical-high')
+        scan_level = resolve_scan_level()
     return asyncio.run(run_security_scans_async(repo_path, scanners_to_run, Path(str(output_dir)), scan_level))
 
 async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], output_dir: Path, scan_level: str = 'critical-high') -> list[dict[str, Any]]:
@@ -781,6 +757,92 @@ def apply_post_scan_pipeline(all_findings: list[dict[str, Any]], repo_path: str,
     return all_findings
 
 
+def finalize_scan(all_findings: list[dict[str, Any]], repo_path: str, output_dir: Path,
+                  *, run_sbom: bool = True) -> list[dict[str, Any]]:
+    """Everything that happens after the scanners return, for every mode
+    (CLI auto, CLI interactive, web): cross-file enhancement (rule-based,
+    plus AI once when enabled), dependency reachability, the HTML report,
+    the PR summary, and the SBOM. Returns the enhanced findings, which are
+    what reports show and what auto-remediation must act on.
+
+    Each stage fails open: a stage that breaks logs and the scan continues
+    with the previous stage's output. The report is always written, so a
+    clean scan still produces report.html.
+    """
+    repo_path = str(Path(repo_path).resolve())
+    enhanced_findings: list[dict[str, Any]] = all_findings
+    pr_summary: str | None = None
+    dep_health_report = None
+
+    if all_findings:
+        print(f"\n📊 Found {len(all_findings)} findings")
+
+    if CROSS_FILE_AVAILABLE and all_findings:
+        print("🧠 Running cross-file enhancement analysis...")
+        try:
+            from appsec_galaxy.enhanced_analyzer import run_cross_file_pipeline
+            enhanced_findings, enhanced_report = asyncio.run(run_cross_file_pipeline(all_findings, repo_path))
+            pr_summary = enhanced_report.get('pr_summary')
+            print(f"✅ Enhanced {len(enhanced_findings)} findings with cross-file analysis")
+        except Exception as e:
+            logger.warning(f"Cross-file enhancement failed, using standard analysis: {e}")
+            enhanced_findings = all_findings
+
+    if all_findings and DEPENDENCY_ANALYSIS_AVAILABLE and ENABLE_DEPENDENCY_ANALYSIS:
+        print("📦 Running dependency code-path analysis...")
+        try:
+            trivy_findings = [f for f in enhanced_findings if f.get('tool') == 'trivy'
+                              and f.get('finding_type') != 'misconfiguration']
+            dep_health_report = run_dependency_analysis(repo_path, trivy_findings=trivy_findings)
+            # Fold reachability into CVE priority (imported + exploited
+            # escalates, never-imported de-escalates)
+            from appsec_galaxy.vuln_intel import apply_reachability
+            apply_reachability(enhanced_findings, dep_health_report)
+            if dep_health_report and dep_health_report.analyzed_dependencies > 0:
+                print(f"✅ Analyzed {dep_health_report.analyzed_dependencies} dependencies: "
+                      f"{dep_health_report.strategy_breakdown}")
+                dep_output_path = output_dir / "raw" / "dependency-health.json"
+                dep_output_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(dep_output_path, 'w') as f:
+                    json.dump(dep_health_report.to_dict(), f, indent=2)
+        except Exception as e:
+            logger.warning(f"Dependency analysis failed: {e}")
+            print("⚠️ Dependency analysis failed (scan continues)")
+
+    try:
+        ai_summary = build_fallback_summary(enhanced_findings)
+        generate_html_report(enhanced_findings, ai_summary, str(output_dir), repo_path,
+                             detect_languages(Path(repo_path)), dep_health_data=dep_health_report)
+        print(f"📄 HTML report: {output_dir / 'report.html'}")
+    except Exception as e:
+        print(f"⚠️  HTML report generation failed: {e}")
+        logger.error(f"Failed to generate HTML report: {e}", exc_info=True)
+
+    if pr_summary:
+        try:
+            pr_summary_path = output_dir / "pr-findings.txt"
+            pr_summary_path.write_text(pr_summary)
+            print(f"📄 PR summary: {pr_summary_path}")
+        except OSError as e:
+            logger.warning(f"Could not write PR summary: {e}")
+
+    if run_sbom:
+        if SBOM_AVAILABLE:
+            print("📋 Generating SBOM for compliance...")
+            try:
+                asyncio.run(generate_repository_sbom(repo_path, str(output_dir / "sbom")))
+                print(f"✅ SBOM generated in {output_dir / 'sbom'}")
+            except Exception as e:
+                logger.warning(f"SBOM generation failed: {e}")
+                print("⚠️ SBOM generation failed (scan continues)")
+        else:
+            print("⚠️ SBOM generation requires Syft (scan continues without SBOM)")
+
+    if not all_findings:
+        print("🎉 No security issues found!")
+    return enhanced_findings
+
+
 def _build_auto_mode_scanner_list() -> list[str]:
     """
     Build the scanner list for auto mode (GitHub Actions / MCP).
@@ -845,124 +907,20 @@ def run_auto_mode() -> list[dict[str, Any]]:
         print(f"🔧 Debug: Current working directory: {os.getcwd()}")
         print(f"🔧 Debug: GITHUB_WORKSPACE: {os.getenv('GITHUB_WORKSPACE', 'not set')}")
 
-    # Get scan level from environment for CI/CD consistency
-    scan_level = os.getenv('APPSEC_SCAN_LEVEL', 'critical-high')
+    scan_level = resolve_scan_level()
     print(f"🔍 Scan level: {scan_level}")
 
     # Run scanners in parallel
     all_findings = run_security_scans(str(repo_path), scanners_to_run, output_dir, scan_level)
 
-    # Bind before the branch: the no-findings path still returns this, so a
-    # clean scan (zero findings) must not raise UnboundLocalError.
-    enhanced_findings: list[dict[str, Any]] = all_findings
-
-    # Generate reports with cross-file enhancement (same as interactive mode)
+    enhanced_findings = finalize_scan(all_findings, str(repo_path), output_dir)
     if all_findings:
-        print(f"\n📊 Found {len(all_findings)} security findings")
-
-        # Enhance findings with cross-file analysis (same as interactive mode)
-        context_summary = ""
-
-        if CROSS_FILE_AVAILABLE and all_findings:
-            print("🧠 Running cross-file enhancement analysis...")
-            try:
-                from appsec_galaxy.enhanced_analyzer import enhance_findings_with_cross_file
-                enhanced_findings = asyncio.run(enhance_findings_with_cross_file(all_findings, str(repo_path)))
-
-                # Context will be shown in the detailed section
-                context_summary = ""
-
-                print(f"✅ Enhanced {len(enhanced_findings)} findings with cross-file analysis")
-            except Exception as e:
-                logger.warning(f"Cross-file enhancement failed, using standard analysis: {e}")
-                enhanced_findings = all_findings
-
-        # Run dependency code-path analysis
-        dep_health_report = None
-        if DEPENDENCY_ANALYSIS_AVAILABLE and ENABLE_DEPENDENCY_ANALYSIS:
-            print("📦 Running dependency code-path analysis...")
-            try:
-                trivy_findings = [f for f in enhanced_findings if f.get('tool') == 'trivy'
-                                  and f.get('finding_type') != 'misconfiguration']
-                dep_health_report = run_dependency_analysis(str(repo_path), trivy_findings=trivy_findings)
-                # Fold reachability into CVE priority (imported + exploited
-                # escalates, never-imported de-escalates)
-                from appsec_galaxy.vuln_intel import apply_reachability
-                apply_reachability(enhanced_findings, dep_health_report)
-                if dep_health_report and dep_health_report.analyzed_dependencies > 0:
-                    print(f"✅ Analyzed {dep_health_report.analyzed_dependencies} dependencies: {dep_health_report.strategy_breakdown}")
-                    # Save raw output
-                    dep_output_path = output_dir / "raw" / "dependency-health.json"
-                    dep_output_path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(dep_output_path, 'w') as f:
-                        json.dump(dep_health_report.to_dict(), f, indent=2)
-            except Exception as e:
-                logger.warning(f"Dependency analysis failed: {e}")
-                print("⚠️ Dependency analysis failed (scan continues)")
-
-        # Generate HTML report
-        try:
-            # Generate AI summary with cross-file insights
-            if enhanced_findings:
-                ai_summary = build_fallback_summary(enhanced_findings, context_summary)
-            else:
-                ai_summary = build_fallback_summary([])
-
-            generate_html_report(enhanced_findings, ai_summary, str(output_dir), str(repo_path), detect_languages(Path(repo_path)), dep_health_data=dep_health_report)
-            html_report_path = output_dir / "report.html"
-            print(f"📄 HTML report generated: {html_report_path}")
-        except Exception as e:
-            print(f"⚠️  HTML report generation failed: {e}")
-            logger.error(f"Failed to generate HTML report: {e}", exc_info=True)
-
-        # Generate cross-file enhanced reports if available
-        if CROSS_FILE_AVAILABLE and enhanced_findings:
-            try:
-                from appsec_galaxy.enhanced_analyzer import generate_cross_file_enhanced_report
-                enhanced_report = asyncio.run(generate_cross_file_enhanced_report(enhanced_findings, str(repo_path)))
-
-                # Create PR findings summary
-                pr_summary_path = output_dir / "pr-findings.txt"
-
-                with open(pr_summary_path, 'w') as f:
-                    f.write(enhanced_report.get('pr_summary', 'No PR summary available'))
-
-                print(f"📄 cross-file enhanced PR summary: {pr_summary_path}")
-            except Exception as e:
-                logger.warning(f"cross-file report generation failed: {e}")
-
-        # Auto-generate SBOM as part of security scan (same as interactive mode)
-        if SBOM_AVAILABLE:
-            print("📋 Auto-generating SBOM for compliance...")
-            try:
-                asyncio.run(generate_repository_sbom(str(repo_path), str(output_dir / "sbom")))
-                print("✅ SBOM generated in outputs/sbom/")
-            except Exception as e:
-                logger.warning(f"SBOM generation failed: {e}")
-                print("⚠️ SBOM generation failed (scan continues)")
-        else:
-            print("⚠️ SBOM generation requires Syft (scan continues without SBOM)")
-
-        # Run auto-remediation with enhanced findings
         handle_auto_remediation(str(repo_path), enhanced_findings)
-    else:
-        print("🎉 No security issues found!")
-
-        # Generate SBOM even when no vulnerabilities are found
-        if SBOM_AVAILABLE:
-            print("📋 Auto-generating SBOM for compliance...")
-            try:
-                asyncio.run(generate_repository_sbom(str(repo_path), str(output_dir / "sbom")))
-                print("✅ SBOM generated in outputs/sbom/")
-            except Exception as e:
-                logger.warning(f"SBOM generation failed: {e}")
-                print("⚠️ SBOM generation failed")
-
     return enhanced_findings
 
 # Cross-File Integration for enhanced AI analysis
 try:
-    from appsec_galaxy.enhanced_analyzer import enhance_findings_with_cross_file, generate_cross_file_enhanced_report  # noqa: F401 (availability probe)
+    from appsec_galaxy.enhanced_analyzer import run_cross_file_pipeline  # noqa: F401 (availability probe)
     CROSS_FILE_AVAILABLE = True
 except ImportError:
     CROSS_FILE_AVAILABLE = False
@@ -1260,21 +1218,14 @@ def handle_auto_remediation(repo_path: str, all_findings: list[dict[str, Any]], 
                 auto_fix_mode = '4'
 
             if auto_fix_mode in ['1', '2', '3', '4']:
-                # Validate the mode makes sense given available findings
-                if auto_fix_mode == '2' and not dependency_findings:
-                    # User wants dependency-only fix but no dependencies found
-                    choice = '1' if sast_findings else '4'
-                    print(f"   → Adjusting mode: No dependencies found, using mode {choice}")
-                elif auto_fix_mode == '3' and not dependency_findings:
-                    # User wants both but no dependencies found
-                    choice = '1' if sast_findings else '4'
-                    print(f"   → Adjusting mode: No dependencies found, using mode {choice} (SAST only)")
-                elif auto_fix_mode == '3' and not sast_findings:
-                    # User wants both but no SAST findings found
-                    choice = '2' if dependency_findings else '4'
-                    print(f"   → Adjusting mode: No SAST findings found, using mode {choice}")
-                else:
-                    choice = auto_fix_mode
+                # Narrow the requested mode to what there is to fix, so a
+                # mode with nothing to do never reports "complete".
+                wants_sast = auto_fix_mode in ('1', '3') and bool(sast_findings)
+                wants_deps = auto_fix_mode in ('2', '3') and bool(dependency_findings)
+                choice = {(True, True): '3', (True, False): '1', (False, True): '2',
+                          (False, False): '4'}[(wants_sast, wants_deps)]
+                if choice != auto_fix_mode:
+                    print(f"   → Adjusting mode {auto_fix_mode} to {choice} based on available findings")
             elif auto_fix_enabled:
                 # If auto-fix is enabled but no specific mode, choose based on what's available
                 if sast_findings and dependency_findings:
@@ -1385,7 +1336,7 @@ def track_usage() -> None:
         logger.info(f"📊 Usage Analytics: {json.dumps(usage_data, indent=2)}")
 
         # Store usage log locally for IP monitoring
-        usage_log_dir = Path("outputs/analytics")
+        usage_log_dir = Path(BASE_OUTPUT_DIR) / "analytics"  # never the CWD: that may be the scanned repo
         usage_log_dir.mkdir(parents=True, exist_ok=True)
 
         usage_file = usage_log_dir / f"usage_{datetime.now().strftime('%Y%m%d')}.json"
@@ -1434,7 +1385,7 @@ def main(argv: list[str] | None = None) -> None:
 
     # Environment detection for debugging CI/CD vs CLI differences
     env_type = "CI/CD" if is_github_actions() else "CLI"
-    scan_level = os.getenv('APPSEC_SCAN_LEVEL', 'critical-high')
+    scan_level = resolve_scan_level()
     logger.info(f"Starting AppSec Galaxy - Mode: {env_type}, Scan Level: {scan_level}")
 
     # Debug: Log environment variables that might affect scanning
@@ -1468,6 +1419,11 @@ def main(argv: list[str] | None = None) -> None:
             repo_path = select_repository()
             if not repo_path:
                 return
+
+            # Resolve and validate like auto/web mode do: a relative path
+            # would defeat baseline globs and diff-only matching, which
+            # compare repo-relative finding paths against this value.
+            repo_path = str(validate_repo_path(repo_path))
 
             # Set up output directory for repository
             output_path = get_output_path(repo_path, BASE_OUTPUT_DIR)
@@ -1526,92 +1482,8 @@ def main(argv: list[str] | None = None) -> None:
                 else:
                     os.environ.pop('APPSEC_CODE_QUALITY', None)
 
-            # Generate reports with cross-file enhancement
-            try:
-                print("📊 Generating reports...")
-
-                # Enhance findings with cross-file analysis first
-                enhanced_findings = all_findings
-                context_summary = ""
-
-                if CROSS_FILE_AVAILABLE and all_findings:
-                    print("🧠 Running cross-file enhancement analysis...")
-                    try:
-                        from appsec_galaxy.enhanced_analyzer import enhance_findings_with_cross_file
-                        enhanced_findings = asyncio.run(enhance_findings_with_cross_file(all_findings, repo_path))
-
-                        # Context will be shown in the detailed section instead
-                        context_summary = ""  # Remove from AI summary
-
-                        print(f"✅ Enhanced {len(enhanced_findings)} findings with cross-file analysis")
-                    except Exception as e:
-                        logger.warning(f"Cross-file enhancement failed, using standard analysis: {e}")
-                        enhanced_findings = all_findings
-
-                # Run dependency code-path analysis
-                dep_health_report_interactive = None
-                if DEPENDENCY_ANALYSIS_AVAILABLE and ENABLE_DEPENDENCY_ANALYSIS:
-                    print("📦 Running dependency code-path analysis...")
-                    try:
-                        trivy_findings_interactive = [f for f in enhanced_findings if f.get('tool') == 'trivy'
-                                                      and f.get('finding_type') != 'misconfiguration']
-                        dep_health_report_interactive = run_dependency_analysis(repo_path, trivy_findings=trivy_findings_interactive)
-                        from appsec_galaxy.vuln_intel import apply_reachability
-                        apply_reachability(enhanced_findings, dep_health_report_interactive)
-                        if dep_health_report_interactive and dep_health_report_interactive.analyzed_dependencies > 0:
-                            print(f"✅ Analyzed {dep_health_report_interactive.analyzed_dependencies} dependencies: {dep_health_report_interactive.strategy_breakdown}")
-                            dep_output_path = output_dir / "raw" / "dependency-health.json"
-                            dep_output_path.parent.mkdir(parents=True, exist_ok=True)
-                            with open(dep_output_path, 'w') as f:
-                                json.dump(dep_health_report_interactive.to_dict(), f, indent=2)
-                    except Exception as e:
-                        logger.warning(f"Dependency analysis failed: {e}")
-                        print("⚠️ Dependency analysis failed (scan continues)")
-
-                # Generate AI summary with cross-file insights
-                if enhanced_findings:
-                    ai_summary = build_fallback_summary(enhanced_findings, context_summary)
-                else:
-                    ai_summary = build_fallback_summary([])
-
-                try:
-                    generate_html_report(enhanced_findings, ai_summary, str(output_dir), str(repo_path), detect_languages(Path(repo_path)), dep_health_data=dep_health_report_interactive)
-                    html_report_path = output_dir / "report.html"
-                    print(f"📄 HTML report: {html_report_path}")
-                except Exception as report_error:
-                    print(f"⚠️  HTML report generation failed: {report_error}")
-                    logger.error(f"HTML report error: {report_error}", exc_info=True)
-
-                # Generate cross-file enhanced reports if available
-                if CROSS_FILE_AVAILABLE and enhanced_findings:
-                    try:
-                        from appsec_galaxy.enhanced_analyzer import generate_cross_file_enhanced_report
-                        enhanced_report = asyncio.run(generate_cross_file_enhanced_report(enhanced_findings, repo_path))
-
-                        # Create PR findings summary
-                        pr_summary_path = output_dir / "pr-findings.txt"
-
-                        with open(pr_summary_path, 'w') as f:
-                            f.write(enhanced_report.get('pr_summary', 'No PR summary available'))
-
-                        print(f"📄 cross-file enhanced PR summary: {pr_summary_path}")
-                    except Exception as e:
-                        logger.warning(f"cross-file report generation failed: {e}")
-            except Exception as e:
-                print(f"⚠️  Report generation failed: {e}")
-                logger.error(f"Report generation error: {e}", exc_info=True)
-
-            # Generate SBOM if user selected it
-            if run_sbom and SBOM_AVAILABLE:
-                print("📋 Generating SBOM for compliance...")
-                try:
-                    asyncio.run(generate_repository_sbom(repo_path, str(output_dir / "sbom")))
-                    print("✅ SBOM generated in outputs/sbom/")
-                except Exception as e:
-                    logger.warning(f"SBOM generation failed: {e}")
-                    print("⚠️ SBOM generation failed (scan continues)")
-            elif run_sbom and not SBOM_AVAILABLE:
-                print("⚠️ SBOM generation requires Syft but it's not installed")
+            print("📊 Generating reports...")
+            enhanced_findings = finalize_scan(all_findings, repo_path, output_dir, run_sbom=run_sbom)
 
             # Handle auto-remediation for findings
             logger.info("🔧 Starting handle_auto_remediation from main choice 1")

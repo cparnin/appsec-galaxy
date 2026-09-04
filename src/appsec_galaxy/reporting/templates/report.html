@@ -419,7 +419,7 @@
         </div>
 
         {% set manual_hours = (critical_count * 2) + (high_count * 1) + ((total_findings - critical_count - high_count) * 0.5) %}
-        {% set hourly_rate = 150 %}
+        {% set hourly_rate = hourly_rate or 150 %}
         {% set cost_estimate = manual_hours * hourly_rate %}
 
         <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 1rem; margin-top: 1rem;">
@@ -427,7 +427,7 @@
             <div>
               <strong>💰 Manual Remediation Cost</strong><br>
               <span style="font-size: 1.2rem;">${{ "{:,.0f}".format(cost_estimate) }}</span>
-              <span style="opacity: 0.8;">({{ "%.1f"|format(manual_hours) }}h @ ${{ hourly_rate }}/h)</span>
+              <span style="opacity: 0.8;">({{ "%.1f"|format(manual_hours) }}h @ ${{ hourly_rate|int }}/h)</span>
             </div>
             <div>
               <strong>⏰ Estimated Timeline</strong><br>

@@ -58,6 +58,57 @@ semantic versioning.
 - One ESLint parse error (`ruleId: null`) raised inside the parser and
   dropped every ESLint finding. `--ext` is no longer passed to ESLint 9,
   which rejects it under flat config.
+- One post-scan pipeline for all three modes. `finalize_scan()` in
+  main.py now runs cross-file enhancement, dependency reachability, the
+  HTML report, the PR summary, and the SBOM for CLI auto, CLI interactive,
+  and web mode. The three pasted copies had drifted: the web report had no
+  language list, web auto-fix acted on unenhanced findings, and a clean
+  CLI scan wrote no report at all. The AI cross-file layer also ran twice
+  per CLI scan (once for findings, again for the PR summary); it now runs
+  once through `run_cross_file_pipeline()`.
+- The interactive CLI validates and resolves the selected repository path
+  like the other modes; a relative path defeated baseline globs and
+  diff-only matching (every semgrep finding filtered out).
+- `APPSEC_SCAN_LEVEL` is validated once (`resolve_scan_level()`) and the
+  sanitized value is what runs. An invalid value previously logged a
+  fallback and then passed the raw value to semgrep, whose filter matched
+  nothing.
+- The web server runs one scan at a time (per-request settings travel
+  through the process environment, so concurrent scans read each other's
+  provider and tier), validates its own configuration before a request
+  mutates the environment, reports the real package version from
+  `/health`, and sends a valid HTTP date in `Last-Modified`.
+- Auto-fix mode is narrowed to what there is to fix in every mode; mode 1
+  with only dependency findings used to print "Auto-remediation complete"
+  having done nothing.
+- Fork detection compares the PR head repository to the repository running
+  the workflow (in `action.yml` and `is_untrusted_pr_context`) instead of
+  `head.repo.fork`, which is true for every PR in a project that was itself
+  forked from a template, and covers `pull_request_target`.
+- The Action's `critical-findings` / `high-findings` outputs include Trivy
+  CVEs and misconfigurations by severity; three critical CVEs with no
+  semgrep findings produced an "All Clear" PR comment. The client
+  workflow's comment now reports a failed or timed-out scan instead of
+  "All Clear" with empty counts.
+- Usage analytics are written under the outputs directory, never the
+  current working directory (which could be the scanned repo, where
+  `git add` would have committed them).
+- Web UI: a failed scan request no longer throws inside the error handler
+  (the progress panel had no "overall" element), progress timers are
+  cancelled between scans, and the remediation phase no longer accumulates
+  one extra entry per scan. Inline `onclick` handlers are gone.
+- `SECURITY_ENGINEER_HOURLY_RATE` is finally used (the report hardcoded
+  $150). `REPO_SEARCH_PATHS` is colon-separated in every mode (the web UI
+  split on commas, the CLI and MCP on colons).
+
+### Removed
+
+- `APPSEC_TOOLS`: parsed into a value nothing read; the CLI picker and the
+  web checkboxes select tools. `LOG_LEVEL` (never read) and `FLASK_DEBUG`
+  (`APPSEC_DEBUG` now also enables the Flask debugger). The dead
+  "minimal output" logging block in main.py that targeted logger names
+  that do not exist. `action.yml` no longer forces `APPSEC_DEBUG` and
+  `APPSEC_LOG_LEVEL` on, so a caller's `env:` can set them.
 - `APPSEC_AI_SCAN_MAX_COST=''` (what the GitHub Action exports when the
   input is left blank) failed pydantic float parsing at startup, so every
   client run of v2.6.3 crashed before scanning. Empty env vars now count

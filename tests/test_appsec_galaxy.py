@@ -1351,20 +1351,38 @@ class TestUntrustedPRContext:
         from appsec_galaxy import main as m
         return m.is_untrusted_pr_context
 
-    def _event(self, tmp_path, fork):
+    def _event(self, tmp_path, fork, head='owner/app'):
         p = tmp_path / 'event.json'
-        p.write_text(json.dumps({'pull_request': {'head': {'repo': {'fork': fork}}}}))
+        p.write_text(json.dumps({'pull_request': {'head': {'repo': {'fork': fork, 'full_name': head}}},
+                                 'repository': {'full_name': 'owner/app'}}))
         return str(p)
 
     def test_fork_pr_is_untrusted(self, tmp_path, monkeypatch):
         monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
-        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True))
+        monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/app')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True, head='stranger/app'))
         assert self._fn()() is True
 
     def test_same_repo_pr_is_trusted(self, tmp_path, monkeypatch):
         monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/app')
         monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, False))
         assert self._fn()() is False
+
+    def test_same_repo_pr_in_a_forked_project_is_trusted(self, tmp_path, monkeypatch):
+        """Regression: head.repo.fork is a property of the repository, so a
+        project that was itself forked from a template had auto-fix silently
+        disabled on every one of its own PRs."""
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+        monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/app')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True, head='owner/app'))
+        assert self._fn()() is False
+
+    def test_pull_request_target_is_gated_too(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request_target')
+        monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/app')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True, head='stranger/app'))
+        assert self._fn()() is True
 
     def test_pr_without_payload_fails_closed(self, monkeypatch):
         monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
@@ -1387,7 +1405,8 @@ class TestUntrustedPRContext:
         from appsec_galaxy import main as m
         monkeypatch.setenv('GITHUB_ACTIONS', 'true')
         monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
-        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True))
+        monkeypatch.setenv('GITHUB_REPOSITORY', 'owner/app')
+        monkeypatch.setenv('GITHUB_EVENT_PATH', self._event(tmp_path, True, head='stranger/app'))
         monkeypatch.setenv('APPSEC_AUTO_FIX', 'true')
         monkeypatch.setenv('APPSEC_AUTO_FIX_MODE', '3')
         findings = [{'tool': 'semgrep', 'check_id': 'sqli', 'severity': 'high',
@@ -5064,6 +5083,89 @@ class TestMachineFacingIdentity:
         assert not (root / codecs.decode('.vevf-vtaber', 'rot13')).exists()
 
 
+class TestFinalizeScan:
+    """finalize_scan is the ONE post-scan report pipeline for CLI auto, CLI
+    interactive, and web mode. It used to be pasted three times and had
+    drifted (web omitted detected languages, remediated unenhanced findings,
+    and a clean CLI scan wrote no report)."""
+
+    def _run(self, tmp_path, monkeypatch, findings, calls):
+        from appsec_galaxy import main as m
+        import appsec_galaxy.enhanced_analyzer as ea
+
+        async def fake_pipeline(f, repo):
+            calls.append('cross_file')
+            return [dict(x, enhanced=True) for x in f], {'pr_summary': 'PR SUMMARY'}
+
+        monkeypatch.setattr(ea, 'run_cross_file_pipeline', fake_pipeline)
+        monkeypatch.setattr(m, 'CROSS_FILE_AVAILABLE', True)
+        monkeypatch.setattr(m, 'ENABLE_DEPENDENCY_ANALYSIS', False)
+        monkeypatch.setattr(m, 'SBOM_AVAILABLE', False)
+        repo = tmp_path / 'repo'
+        repo.mkdir(exist_ok=True)
+        out = tmp_path / 'out'
+        out.mkdir(exist_ok=True)
+        return m.finalize_scan(findings, str(repo), out, run_sbom=False), out
+
+    def test_runs_cross_file_once_and_returns_enhanced_findings(self, tmp_path, monkeypatch):
+        calls: list[str] = []
+        findings = [{'tool': 'semgrep', 'check_id': 'x', 'path': 'a.py', 'severity': 'high',
+                     'start': {'line': 1}, 'extra': {'message': 'm'}, 'category': 'security'}]
+        enhanced, out = self._run(tmp_path, monkeypatch, findings, calls)
+        assert calls == ['cross_file'], "the AI cross-file layer must run exactly once per scan"
+        assert enhanced[0]['enhanced'] is True
+        assert (out / 'report.html').exists()
+        assert (out / 'pr-findings.txt').read_text() == 'PR SUMMARY'
+
+    def test_clean_scan_still_writes_a_report(self, tmp_path, monkeypatch):
+        calls: list[str] = []
+        enhanced, out = self._run(tmp_path, monkeypatch, [], calls)
+        assert enhanced == [] and calls == []
+        assert (out / 'report.html').exists()
+        assert 'Low Risk' in (out / 'report.html').read_text()
+
+    def test_no_inline_copies_of_the_pipeline_remain(self):
+        """Every mode must call finalize_scan rather than re-implement it."""
+        root = Path(__file__).resolve().parent.parent / 'src' / 'appsec_galaxy'
+        for name in ('main.py', 'web_app.py'):
+            src = (root / name).read_text()
+            assert 'enhance_findings_with_cross_file(' not in src, name
+            assert 'generate_cross_file_enhanced_report(' not in src, name
+        assert (root / 'web_app.py').read_text().count('finalize_scan(') == 1
+        assert (root / 'main.py').read_text().count('= finalize_scan(') == 2  # auto + interactive
+
+
+class TestScanLevelResolution:
+    def test_invalid_level_falls_back_instead_of_reaching_semgrep(self, monkeypatch):
+        """Regression: run_auto_mode re-read the raw env after validation, so
+        APPSEC_SCAN_LEVEL=high made semgrep's filter match nothing and CI
+        passed green with zero SAST findings."""
+        from appsec_galaxy.main import resolve_scan_level
+        monkeypatch.setenv('APPSEC_SCAN_LEVEL', 'high')
+        assert resolve_scan_level() == 'critical-high'
+        monkeypatch.setenv('APPSEC_SCAN_LEVEL', ' ALL ')
+        assert resolve_scan_level() == 'all'
+
+    def test_auto_fix_mode_narrows_to_available_findings(self, monkeypatch, capsys):
+        """Regression: mode 1 with only dependency findings printed
+        "Auto-remediation complete" without doing anything."""
+        import sys
+        if 'appsec_galaxy.main' in sys.modules:
+            del sys.modules['appsec_galaxy.main']
+        from appsec_galaxy import main as m
+        monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+        monkeypatch.delenv('GITHUB_EVENT_NAME', raising=False)
+        monkeypatch.setenv('APPSEC_AUTO_FIX', 'true')
+        monkeypatch.setenv('APPSEC_AUTO_FIX_MODE', '1')
+        deps_only = [{'tool': 'trivy', 'vulnerability_id': 'CVE-1', 'severity': 'high',
+                      'path': 'requirements.txt', 'fixed_version': '2.0', 'pkg_name': 'x'}]
+        with patch('appsec_galaxy.auto_remediation.remediation.create_remediation_pr') as mock_pr:
+            result = m.handle_auto_remediation('/tmp/repo', deps_only)
+        assert not mock_pr.called
+        assert 'Adjusting mode 1 to 4' in capsys.readouterr().out
+        assert result['message'] == 'Auto-fix skipped'
+
+
 class TestPostScanPipeline:
     """Integration: apply_post_scan_pipeline in src/main.py wires suppression,
     diff scoping, enrichment, SARIF, and history together."""
@@ -5388,8 +5490,8 @@ class TestSummaryStats:
         ]
         monkeypatch.setattr(web_app, 'run_security_scans', lambda *a, **k: findings)
         monkeypatch.setattr(web_app, 'track_usage', lambda: None)
-        monkeypatch.setattr(web_app, 'generate_html_report', lambda *a, **k: None)
-        monkeypatch.setattr(web_app, 'CROSS_FILE_AVAILABLE', False, raising=False)
+        # finalize_scan is the shared post-scan pipeline; identity here
+        monkeypatch.setattr(web_app, 'finalize_scan', lambda f, *a, **k: f)
         web_app.app.config['TESTING'] = True
         resp = web_app.app.test_client().post('/scan', json={
             'repo_path': str(tmp_path), 'selected_tools': ['semgrep', 'code_quality'],

@@ -1,6 +1,7 @@
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pathlib import Path
 import logging
+import os
 from datetime import datetime
 from typing import Any
 
@@ -379,6 +380,13 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         # real counts, not parsed out of the narrative text); the badge uses
         # the same risk formula as the fallback summary text.
         risk_level, risk_label = risk_assessment(summary_stats)
+        # Manual-review cost estimate rate (USD/hour), user-tunable.
+        try:
+            hourly_rate = float(os.getenv('SECURITY_ENGINEER_HOURLY_RATE', '150') or 150)
+            if not 0 < hourly_rate <= 1000:
+                hourly_rate = 150.0
+        except ValueError:
+            hourly_rate = 150.0
         exec_stats: dict[str, Any] = {
             **summary_stats,
             'code_quality': summary_stats['total_code_quality'],
@@ -391,6 +399,7 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         html_content = template.render(  # nosemgrep: python.flask.security.xss.audit.direct-use-of-jinja2.direct-use-of-jinja2
             results=sorted_results,
             total_findings=total_findings,
+            hourly_rate=hourly_rate,
             critical_count=critical_count,
             high_count=high_count,
             ai_summary=ai_summary_html,

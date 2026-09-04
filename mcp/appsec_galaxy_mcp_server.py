@@ -96,7 +96,6 @@ class AppSecGalaxyMCPCore:
 
         common_locations = [
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # Parent of mcp directory
-            os.path.expanduser("~/repos/personal/appsec-galaxy"),
             os.path.expanduser("~/appsec-galaxy"),
             "./appsec-galaxy",
             "../appsec-galaxy",
@@ -977,7 +976,6 @@ def get_gitleaks_findings(repo_path: str, page: int = 1, page_size: int = 10) ->
                 "author": data.get('Author', 'Unknown'),
                 "date": data.get('Date', 'Unknown'),
             })
-            f.pop('code_snippet', None)  # do not echo the secret back
             findings.append(f)
 
     page_findings, page, page_size, total, total_pages = _paginate(findings, page, page_size)
@@ -1133,7 +1131,7 @@ def health_check() -> str:
 ## Configuration:
 - **AppSec Galaxy Path**: `{core.appsec_galaxy_path}`
 - **MCP Server**: FastMCP (official MCP SDK)
-- **Available Tools**: 16
+- **Available Tools**: {len(mcp_app._tool_manager.list_tools())}
 
 ## Recommendations:
 {chr(10).join(recommendations)}

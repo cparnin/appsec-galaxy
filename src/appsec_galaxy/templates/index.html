@@ -620,13 +620,13 @@
                     </div>
                     <span class="field-help" id="repoHelperText">AppSec Galaxy will scan the selected directory.</span>
                     <div class="picker-buttons">
-                        <button type="button" class="picker-btn" onclick="showCommonRepos()">Browse Common Locations</button>
-                        <button type="button" class="picker-btn" onclick="promptForRepo()">Enter Path Manually</button>
+                        <button type="button" class="picker-btn" id="browseReposBtn">Browse Common Locations</button>
+                        <button type="button" class="picker-btn" id="manualPathBtn">Enter Path Manually</button>
                     </div>
                     <div id="commonRepos" class="picker-panel" style="display:none;">
                         <div class="picker-panel-header">
                             <span class="label">Repositories</span>
-                            <button type="button" class="close-btn" onclick="document.getElementById('commonRepos').style.display='none'; var b=document.querySelector('.picker-btn[onclick*=&quot;showCommonRepos&quot;]'); if(b)b.classList.remove('active');" title="Close" aria-label="Close">&times;</button>
+                            <button type="button" class="close-btn" id="closeReposBtn" title="Close" aria-label="Close">&times;</button>
                         </div>
                         <div class="common-repos">
                             <div id="repoList" class="repo-list"></div>
@@ -861,11 +861,21 @@
         
         // Auto-load repository info on page load
         document.addEventListener('DOMContentLoaded', setCurrentDirectory);
+        // Handlers are attached here rather than inline on* attributes so the
+        // page never depends on inline event handlers (see CLAUDE.md).
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('browseReposBtn').addEventListener('click', showCommonRepos);
+            document.getElementById('manualPathBtn').addEventListener('click', promptForRepo);
+            document.getElementById('closeReposBtn').addEventListener('click', () => {
+                document.getElementById('commonRepos').style.display = 'none';
+                document.getElementById('browseReposBtn').classList.remove('active');
+            });
+        });
         
         async function showCommonRepos() {
             const commonRepos = document.getElementById('commonRepos');
             const repoList = document.getElementById('repoList');
-            const browseBtn = document.querySelector('.picker-btn[onclick*="showCommonRepos"]');
+            const browseBtn = document.getElementById('browseReposBtn');
 
             // Toggle: clicking Browse again closes the panel.
             const isOpen = commonRepos.style.display !== 'none' && commonRepos.style.display !== '';
@@ -1093,13 +1103,27 @@
                 { id: 'enhancement', name: 'AI Enhancement', duration: 5000, messages: ['Starting AI analysis...', 'Enhancing findings with context...', 'Applying intelligence...'] },
                 { id: 'report', name: 'Report Generation', duration: 3000, messages: ['Generating HTML report...', 'Creating summary...', 'Finalizing report...'] }
             ],
-            currentPhase: 0,
+            basePhases: null,
+            timers: [],
+            remediationShown: false,
 
             start: function() {
+                // Fresh plan every scan: cancel the previous scan's timers and
+                // rebuild the phase list (the remediation phase is inserted
+                // per scan, so it must not accumulate across runs).
+                this.stop();
+                if (!this.basePhases) this.basePhases = this.phases.slice();
+                this.phases = this.basePhases.slice();
+                this.remediationShown = false;
                 document.getElementById('progressSummary').style.display = 'block';
                 document.getElementById('codeQualityContainer').style.display = 'block';
                 document.getElementById('additionalProgress').style.display = 'block';
                 this.runPhase(0);
+            },
+
+            stop: function() {
+                for (const t of this.timers) { clearTimeout(t); clearInterval(t); }
+                this.timers = [];
             },
             
             runPhase: function(phaseIndex) {
@@ -1129,9 +1153,10 @@
                         messageIndex++;
                     }
                 }, phase.duration / phase.messages.length);
-                
+                this.timers.push(messageInterval);
+
                 // Complete this phase and move to next
-                setTimeout(() => {
+                const phaseTimer = setTimeout(() => {
                     clearInterval(messageInterval);
                     progressItem.classList.remove('running');
                     progressItem.classList.add('completed');
@@ -1142,7 +1167,8 @@
                     // Show remediation phase if auto-fix is enabled
                     if (phaseIndex === 3) { // After code quality scanning (codeQuality is index 3)
                         const autoFix = document.getElementById('autoFix').value !== 'false';
-                        if (autoFix) {
+                        if (autoFix && !this.remediationShown) {
+                            this.remediationShown = true;
                             document.getElementById('remediationProgress').style.display = 'flex';
                             this.phases.splice(4, 0, {
                                 id: 'remediation',
@@ -1155,23 +1181,28 @@
                     
                     this.runPhase(phaseIndex + 1);
                 }, phase.duration);
+                this.timers.push(phaseTimer);
             },
             
             complete: function() {
+                this.stop();
                 document.getElementById('overallStatus').innerHTML = '<span style="color: #38b2ac; font-weight: 600;">✅ Scan completed successfully!</span>';
             },
-            
-            error: function(phase, message) {
-                const progressItem = document.getElementById(phase + 'Progress');
-                const statusElement = document.getElementById(phase + 'Status');
-                const indicatorElement = document.getElementById(phase + 'Indicator');
-                
-                progressItem.classList.remove('running');
-                progressItem.classList.add('error');
-                statusElement.textContent = message || 'Error occurred';
-                indicatorElement.textContent = '❌';
-                indicatorElement.classList.add('completed');
-                
+
+            // Mark the phase that was running (if any) as failed. Safe to call
+            // with no phase element present (e.g. the request failed before
+            // the first phase rendered).
+            error: function(message) {
+                this.stop();
+                const running = document.querySelector('.progress-item.running');
+                if (running) {
+                    running.classList.remove('running');
+                    running.classList.add('error');
+                    const status = running.querySelector('[id$="Status"]');
+                    const indicator = running.querySelector('[id$="Indicator"]');
+                    if (status) status.textContent = message || 'Error occurred';
+                    if (indicator) indicator.textContent = '❌';
+                }
                 document.getElementById('overallStatus').innerHTML = '<span style="color: #ff6b6b; font-weight: 600;">⚠️ Scan encountered issues</span>';
             }
         };
@@ -1294,12 +1325,12 @@
             } catch (error) {
                 document.getElementById('error').textContent = 'Error: ' + error.message;
                 document.getElementById('error').style.display = 'block';
-                progressManager.error('overall', error.message);
+                progressManager.error(error.message);
             } finally {
                 // Hide loading state
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('scanButton').disabled = false;
-                document.getElementById('scanButton').textContent = '🔍 Start Security Scan';
+                document.getElementById('scanButton').textContent = 'Start Security Scan';
             }
         });
         
