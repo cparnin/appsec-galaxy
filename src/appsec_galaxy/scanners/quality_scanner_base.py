@@ -145,26 +145,39 @@ class QualityScannerBase(ABC):
             self.logger.debug(f"Error checking {self.display_name} installation: {e}")
             return False
 
+    # Tools that print their report to stdout instead of writing a file;
+    # run_scan saves stdout to output_file so parse_output works uniformly.
+    reads_stdout: bool = False
+
+    def is_fatal_exit(self, returncode: int) -> bool:
+        """Whether a return code means the tool failed (as opposed to "found
+        issues"). Most linters use 0/1 for clean/issues and 2+ for errors;
+        override for tools with other conventions (Checkstyle exits with the
+        violation count)."""
+        return returncode >= 2
+
     def find_config(self, repo_path: Path) -> Path | None:
         """
-        Find config file: repo config > bundled config > None.
+        Find config file: bundled config > repo config > None.
+
+        The bundled config wins on purpose. Scanned repos are hostile input,
+        and most linter configs can execute code (pylint init-hook and
+        load-plugins, ESLint's JS config, RuboCop's require:), so a repo's
+        own config is only used when AppSec Galaxy ships none for the tool.
 
         Returns:
             Path to config file, or None if tool should use defaults
         """
-        # Check if repo has its own config
+        bundled_config = self.get_bundled_config_path(repo_path)
+        if bundled_config and bundled_config.exists():
+            self.logger.debug(f"Using bundled {self.display_name} config: {bundled_config}")
+            return bundled_config
+
         for config_path in self.get_repo_config_paths(repo_path):
             if config_path.exists():
                 self.logger.debug(f"Using repo config: {config_path}")
                 return config_path
 
-        # Use bundled config as fallback
-        bundled_config = self.get_bundled_config_path(repo_path)
-        if bundled_config and bundled_config.exists():
-            self.logger.info(f"📋 No {self.display_name} config in repo - using AppSec Galaxy default config")
-            return bundled_config
-
-        # No config available
         self.logger.debug(f"No config found for {self.display_name}, tool will use defaults")
         return None
 
@@ -232,8 +245,11 @@ class QualityScannerBase(ABC):
 
             self.logger.debug(f"{self.display_name} completed with return code: {result.returncode}")
 
-            # Check for fatal errors (returncode 2 is common for config errors)
-            if result.returncode >= 2:
+            if self.reads_stdout and result.stdout:
+                output_file.write_text(result.stdout, encoding='utf-8')
+
+            # A failed tool must not read as "no issues found".
+            if self.is_fatal_exit(result.returncode) and not output_file.exists():
                 self.logger.error(f"{self.display_name} failed with exit code {result.returncode}")
                 if result.stderr:
                     self.logger.debug(f"Error output: {result.stderr[:500]}")

@@ -37,15 +37,14 @@ mcp = mcp_app
 _DANGEROUS_CHARS = (';', '|', '&', '$', '`', '\x00', '\n', '\r')
 
 # Code-quality linter outputs share one normalized shape (produced by the
-# AppSec Galaxy code_quality scanner). Default severity differs only for phpstan.
+# AppSec Galaxy code_quality scanner).
 _CODE_QUALITY_LINTERS = {
     'eslint': ('javascript/typescript', 'medium'),
     'pylint': ('python', 'medium'),
     'checkstyle': ('java', 'medium'),
     'golangci-lint': ('go', 'medium'),
     'rubocop': ('ruby', 'medium'),
-    'clippy': ('rust', 'medium'),
-    'phpstan': ('php', 'high'),
+    'swiftlint': ('swift', 'medium'),
 }
 
 
@@ -133,12 +132,13 @@ Example: export APPSEC_GALAXY_PATH="/path/to/appsec-galaxy" """)
             return base_paths  # explicit allowlist replaces the broad defaults
         if "REPO_SEARCH_PATHS" in os.environ:
             base_paths.extend(os.environ["REPO_SEARCH_PATHS"].split(":"))
+        # Deliberately NOT the home directory or "." (the server's cwd):
+        # those also feed _assert_allowed, and either would let a client
+        # scan ~/.ssh, ~/.aws, or wherever the server happened to start.
         user_home = os.path.expanduser("~")
         base_paths.extend([
             os.path.join(user_home, "repos"),
             os.path.join(user_home, "projects"),
-            user_home,
-            "."
         ])
         return base_paths
 
@@ -172,6 +172,8 @@ Example: export APPSEC_GALAXY_PATH="/path/to/appsec-galaxy" """)
             if os.path.isdir(search_dir):
                 try:
                     for item in os.listdir(search_dir):
+                        if item.startswith('.'):
+                            continue  # never fuzzy-match dotfiles (.aws, .ssh)
                         if repo_path.lower() in item.lower() or item.lower() in repo_path.lower():
                             full_path = os.path.join(search_dir, item)
                             if os.path.isdir(full_path):
@@ -251,7 +253,9 @@ Example: export APPSEC_GALAXY_PATH="/path/to/appsec-galaxy" """)
                 "message": f"Scan already in progress for {repo_name}. Use get_scan_findings to poll for results."
             })
 
-        cmd = [self._find_python_executable(), "-m", "appsec_galaxy.main"]
+        # -P (safe path): never let the scanned repo's cwd shadow stdlib or
+        # third-party modules the scanner imports (hostile repos).
+        cmd = [self._find_python_executable(), "-P", "-m", "appsec_galaxy.main"]
         env = self._build_scan_env()
         if "APPSEC_CODE_QUALITY" not in env:
             env["APPSEC_CODE_QUALITY"] = "true"
@@ -531,7 +535,7 @@ def auto_remediate(repo_path: str) -> str:
     core = _core()
     resolved = _resolve(repo_path)
 
-    cmd = [core._find_python_executable(), "-m", "appsec_galaxy.main"]
+    cmd = [core._find_python_executable(), "-P", "-m", "appsec_galaxy.main"]
     env = core._build_scan_env()
     env["APPSEC_AUTO_FIX"] = "true"
     env["APPSEC_AUTO_FIX_MODE"] = "3"  # Both SAST and dependencies
@@ -994,7 +998,7 @@ def get_gitleaks_findings(repo_path: str, page: int = 1, page_size: int = 10) ->
 def get_code_quality_findings(repo_path: str, page: int = 1, page_size: int = 10,
                               linter_filter: str | None = None) -> str:
     """Get paginated code quality findings from all linters (eslint, pylint,
-    checkstyle, golangci-lint, rubocop, clippy, phpstan) as structured JSON."""
+    checkstyle, golangci-lint, rubocop, swiftlint) as structured JSON."""
     core = _core()
     resolved = _resolve(repo_path)
 

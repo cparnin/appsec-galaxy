@@ -91,3 +91,7 @@ bd595f1748c59c6e0576e8e3ecd0400973f9fe17:tests/conftest.py:generic-api-key:137
 # matched by the upstream jwt rule. Published history is never rewritten.
 bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/master/raw/semgrep.json:jwt:1
 bd595f1748c59c6e0576e8e3ecd0400973f9fe17:outputs/cparnin_VulnerableApp/security-fixes-20251016_080824/raw/semgrep.json:jwt:1
+tests/test_ai_consumers.py:generic-secret:479
+tests/test_appsec_galaxy.py:generic-token:108
+tests/test_appsec_galaxy.py:generic-token:109
+tests/test_appsec_galaxy.py:generic-token:122

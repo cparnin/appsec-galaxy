@@ -241,8 +241,21 @@ def scan_repository():
 
         repo_path = data['repo_path']
         scan_level = data.get('scan_level', 'critical-high')
+        if scan_level not in ('critical-high', 'all'):
+            # An unknown level makes semgrep's severity filter drop every
+            # result, which would read as a clean scan.
+            return jsonify({'error': f"scan_level must be 'critical-high' or 'all' (got '{scan_level}')"}), 400
         auto_fix = data.get('auto_fix', False)
+        if not isinstance(auto_fix, bool):
+            # The string "false" is truthy; only a JSON boolean may turn on
+            # a path that commits, pushes, and opens pull requests.
+            return jsonify({'error': 'auto_fix must be a JSON boolean'}), 400
+        auto_fix_mode = str(data.get('auto_fix_mode', '3') or '3')
+        if auto_fix and auto_fix_mode not in ('1', '2', '3'):
+            return jsonify({'error': f"auto_fix_mode must be 1, 2, or 3 (got '{auto_fix_mode}')"}), 400
         selected_tools = data.get('selected_tools', ['semgrep', 'gitleaks', 'trivy', 'code_quality', 'sbom'])
+        if not isinstance(selected_tools, list) or not all(isinstance(t, str) for t in selected_tools):
+            return jsonify({'error': 'selected_tools must be a list of tool names'}), 400
         requested_provider = str(data.get('ai_provider', '') or '').strip().lower()
         requested_tier = str(data.get('ai_scan_tier', '') or '').strip()
 
@@ -471,8 +484,6 @@ def scan_repository():
             # Handle auto-remediation non-interactively
             remediation_results = None
             if auto_fix and all_findings:
-                # Get auto_fix_mode from request data (sent from frontend form)
-                auto_fix_mode = data.get('auto_fix_mode', '3')  # Default to both if not specified
 
                 # Set environment variables for non-interactive mode.
                 # APPSEC_WEB_MODE is an internal process marker (set and

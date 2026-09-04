@@ -16,6 +16,10 @@ from appsec_galaxy.scanners.ai_scanner import _call_ai
 
 logger = logging.getLogger(__name__)
 
+# Lockfiles the dependency remediator may regenerate next to a fixed manifest;
+# they are staged alongside it (and nothing else in the tree is).
+LOCKFILE_NAMES = ('package-lock.json', 'yarn.lock', 'go.sum', 'Cargo.lock', 'Gemfile.lock', 'composer.lock')
+
 def validate_package_name(name: str) -> bool:
     """
     Validate package name contains only safe characters to prevent command injection.
@@ -816,16 +820,34 @@ Provide the corrected code for line {line_number}.
             logger.error(f"Error creating branch: {e}")
             raise
 
+    def _stage_touched_files(self, repo_path: str, fixes: list[dict[str, Any]],
+                             extra_names: tuple[str, ...] = ()) -> None:
+        """git add only the files the remediator wrote.
+
+        `git add .` would sweep the whole working tree into the PR: an
+        untracked .env, a leftover manifest backup, or the developer's
+        unrelated edits would be pushed to GitHub. Lockfiles regenerated
+        next to a fixed manifest are included via extra_names.
+        """
+        paths: list[str] = []
+        for fix in fixes:
+            rel = fix.get('file_path') or fix.get('file') or ''
+            if not rel:
+                continue
+            paths.append(rel)
+            manifest_dir = os.path.dirname(os.path.join(repo_path, rel))
+            for name in extra_names:
+                if os.path.exists(os.path.join(manifest_dir, name)):
+                    paths.append(os.path.relpath(os.path.join(manifest_dir, name), repo_path))
+        unique = sorted(set(paths))
+        if not unique:
+            raise ValueError("No fixed files to stage")
+        subprocess.run(["git", "add", "--", *unique], cwd=repo_path, check=True, capture_output=True)
+
     def commit_fixes(self, repo_path: str, fixes: list[dict[str, Any]]) -> bool:
         """Commit the applied fixes."""
         try:
-            # Add all modified files
-            subprocess.run(
-                ["git", "add", "."],
-                cwd=repo_path,
-                check=True,
-                capture_output=True
-            )
+            self._stage_touched_files(repo_path, fixes)
 
             # Create commit message
             fix_count = len(fixes)
@@ -1774,12 +1796,7 @@ This PR contains automatic fixes for security vulnerabilities detected by AppSec
     def commit_dependency_fixes(self, repo_path: str, fixes: list[dict[str, Any]]) -> bool:
         """Commit dependency fixes."""
         try:
-            subprocess.run(
-                ["git", "add", "."],
-                cwd=repo_path,
-                check=True,
-                capture_output=True
-            )
+            self._stage_touched_files(repo_path, fixes, LOCKFILE_NAMES)
 
             fix_count = len(fixes)
             commit_message = f"🔒 Auto-upgrade {fix_count} vulnerable dependencies\n\n"

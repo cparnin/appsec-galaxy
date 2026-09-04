@@ -4,6 +4,8 @@ golangci-lint code quality scanner for Go.
 golangci-lint is the standard linter aggregator for Go, running multiple linters in parallel.
 """
 
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 from .quality_scanner_base import QualityScannerBase
@@ -36,9 +38,21 @@ class GolangCILintScanner(QualityScannerBase):
             repo_path / ".golangci.json",
         ]
 
+    reads_stdout = True  # JSON report goes to stdout in both v1 and v2
+
+    def _major_version(self) -> int:
+        """golangci-lint v2 changed the config schema and the output flags."""
+        try:
+            out = subprocess.run(['golangci-lint', 'version'], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return 1
+        match = re.search(r'\b(\d+)\.\d+\.\d+', out)
+        return int(match.group(1)) if match else 1
+
     def get_bundled_config_path(self, repo_path: Path) -> Path | None:
         """Use AppSec Galaxy bundled golangci-lint config."""
-        bundled = self.configs_dir / "golangci.yml"
+        name = "golangci.v2.yml" if self._major_version() >= 2 else "golangci.yml"
+        bundled = self.configs_dir / name
         return bundled if bundled.exists() else None
 
     def build_scan_command(self, repo_path: Path, output_file: Path, config_path: Path | None) -> list[str]:
@@ -49,8 +63,11 @@ class GolangCILintScanner(QualityScannerBase):
         if config_path:
             cmd.extend(['--config', str(config_path)])
 
-        # Output format
-        cmd.extend(['--out-format', 'json'])
+        # JSON report on stdout (captured by run_scan via reads_stdout)
+        if self._major_version() >= 2:
+            cmd.extend(['--output.json.path', 'stdout'])
+        else:
+            cmd.extend(['--out-format', 'json'])
 
         # Scan current directory
         cmd.append('./...')
@@ -92,15 +109,6 @@ class GolangCILintScanner(QualityScannerBase):
                 }
             }
         }
-
-    def parse_output(self, output_file: Path, repo_path: Path) -> list[dict]:
-        """
-        golangci-lint outputs to stdout, not file.
-        Override to handle stdout parsing.
-        """
-        # For now, return empty - will need to capture stdout differently
-        # This is a limitation we can document
-        return super().parse_output(output_file, repo_path)
 
     def extract_findings_from_output(self, raw_results: Any) -> list[dict]:
         """Extract findings from golangci-lint JSON."""

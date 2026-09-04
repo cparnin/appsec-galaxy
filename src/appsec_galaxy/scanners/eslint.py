@@ -91,7 +91,7 @@ def _normalize_eslint_finding(file_path: str, message: dict, repo_path: Path) ->
         'tool': 'eslint',
         'category': 'code_quality',
         'severity': normalized_severity,
-        'check_id': message.get('ruleId', 'eslint-rule'),
+        'check_id': message.get('ruleId') or 'eslint-parse-error',  # ruleId is null for fatal parse errors
         'path': str(relative_path),
         'start': {
             'line': message.get('line', 0),
@@ -149,82 +149,31 @@ def run_eslint(repo_path: str, output_dir: str | None = None) -> list:
 
         logger.debug(f"Starting ESLint scan of {repo_path_obj}")
 
-        # Check if package.json exists (indicates Node.js project)
-        package_json = repo_path_obj / "package.json"
-        has_package_json = package_json.exists()
+        # Always lint with the bundled config and never load the repo's own.
+        # ESLint configs are JavaScript (eslint.config.js, .eslintrc.js) and
+        # execute on load; scanned repos are hostile input.
+        try:
+            version_result = subprocess.run(
+                ['eslint', '--version'], capture_output=True, text=True, timeout=5
+            )
+            major_version = int(version_result.stdout.strip().split('.')[0].replace('v', ''))
+        except Exception as e:
+            logger.error(f"Failed to detect ESLint version: {e}")
+            return []
 
-        # Check for ESLint config (any format)
-        eslint_config = repo_path_obj / ".eslintrc.json"
-        eslintrc_js = repo_path_obj / ".eslintrc.js"
-        eslintrc_cjs = repo_path_obj / ".eslintrc.cjs"
-        eslintrc_yml = repo_path_obj / ".eslintrc.yml"
-        eslintrc_yaml = repo_path_obj / ".eslintrc.yaml"
-        eslint_config_flat = repo_path_obj / "eslint.config.js"  # v9+ flat config
-        eslint_config_mjs = repo_path_obj / "eslint.config.mjs"
-        eslint_config_cjs = repo_path_obj / "eslint.config.cjs"
-        package_has_eslint = False
-
-        if has_package_json:
-            try:
-                with open(package_json) as f:
-                    pkg = json.load(f)
-                    package_has_eslint = 'eslintConfig' in pkg
-            except Exception:
-                pass
-
-        has_config = (
-            eslint_config.exists() or
-            eslintrc_js.exists() or
-            eslintrc_cjs.exists() or
-            eslintrc_yml.exists() or
-            eslintrc_yaml.exists() or
-            eslint_config_flat.exists() or
-            eslint_config_mjs.exists() or
-            eslint_config_cjs.exists() or
-            package_has_eslint
-        )
-
-        # Use AppSec Galaxy bundled config as fallback if repo has none
-        # This ensures ESLint works everywhere without modifying client repos
-        bundled_config_path = None
-        if not has_config:
-            logger.info("📋 No ESLint config in repo - using AppSec Galaxy default config for code quality scan")
-
-            # Detect ESLint version to choose correct config format
-            try:
-                version_result = subprocess.run(
-                    ['eslint', '--version'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                version_str = version_result.stdout.strip()
-                # Extract major version (e.g., "v9.37.0" -> 9)
-                major_version = int(version_str.split('.')[0].replace('v', ''))
-
-                if major_version >= 9:
-                    # ESLint v9+ uses flat config (eslint.config.js)
-                    bundled_config_path = CONFIGS_DIR / "eslint.config.js"
-                    logger.debug(f"Using ESLint v{major_version} flat config: {bundled_config_path}")
-                else:
-                    # ESLint v8 and below use legacy format (.eslintrc.json)
-                    bundled_config_path = CONFIGS_DIR / "eslintrc.v8.json"
-                    logger.debug(f"Using ESLint v{major_version} legacy config: {bundled_config_path}")
-
-                if not bundled_config_path.exists():
-                    logger.error(f"Bundled ESLint config not found: {bundled_config_path}")
-                    return []
-
-            except Exception as e:
-                logger.error(f"Failed to detect ESLint version: {e}")
-                return []
+        if major_version >= 9:
+            bundled_config_path = CONFIGS_DIR / "eslint.config.js"   # flat config
+            no_repo_config_flag = '--no-config-lookup'
+        else:
+            bundled_config_path = CONFIGS_DIR / "eslintrc.v8.json"   # legacy format
+            no_repo_config_flag = '--no-eslintrc'
+        if not bundled_config_path.exists():
+            logger.error(f"Bundled ESLint config not found: {bundled_config_path}")
+            return []
+        logger.debug(f"Using ESLint v{major_version} bundled config: {bundled_config_path}")
 
         # Build ESLint command
-        cmd = ['eslint']
-
-        # Add bundled config if using fallback
-        if bundled_config_path:
-            cmd.extend(['--config', str(bundled_config_path)])
+        cmd = ['eslint', no_repo_config_flag, '--config', str(bundled_config_path)]
 
         # Scan all JS/TS files
         cmd.extend([
@@ -234,10 +183,10 @@ def run_eslint(repo_path: str, output_dir: str | None = None) -> list:
             '--no-error-on-unmatched-pattern'  # Don't fail if no files match
         ])
 
-        # Add file extensions to scan
-        cmd.extend([
-            '--ext', '.js,.jsx,.ts,.tsx,.mjs,.cjs'
-        ])
+        # --ext is a legacy (v8) option; flat config declares its own file
+        # globs and ESLint 9.0-9.20 rejects the flag outright.
+        if major_version < 9:
+            cmd.extend(['--ext', '.js,.jsx,.ts,.tsx,.mjs,.cjs'])
 
         # Add exclusion patterns
         for pattern in SCAN_EXCLUDE_PATTERNS:
@@ -299,11 +248,6 @@ def run_eslint(repo_path: str, output_dir: str | None = None) -> list:
             messages = file_result.get('messages', [])
 
             for message in messages:
-                # Skip messages that are just warnings about missing config
-                if 'no-unused-vars' in message.get('ruleId', ''):
-                    # This is a common code quality issue - include it
-                    pass
-
                 normalized = _normalize_eslint_finding(file_path, message, repo_path_obj)
                 findings.append(normalized)
 

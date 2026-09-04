@@ -6,7 +6,9 @@ gitignore = true
 # layer the custom rules below on top. Without this, detection is frozen at
 # whatever formats were hand-written here: any credential prefix a provider
 # introduces or rotates from now on would be silently undetectable. The
-# custom rules stay because they cover shapes the defaults do not.
+# custom rules stay because they cover shapes the defaults do not. Do not
+# add a custom rule for a shape upstream already detects: gitleaks runs
+# every rule, so a second rule for the same shape reports each secret twice.
 [extend]
 useDefault = true
 
@@ -37,36 +39,14 @@ regexes = [
 # "sourcegraph", so any SBOM, lockfile, or commit list with SHA-1 hashes
 # produces hundreds of false positives (610 on one repo's git history).
 # Same id so the upstream rule is replaced, not duplicated; the real
-# token shapes (sgp_ prefix) are still detected.
+# token shapes (sgp_ prefix) are still detected. Note the flip side: a
+# custom rule whose id matches an upstream rule REPLACES it, so never
+# reuse an upstream id (e.g. "private-key") for a narrower pattern.
 [[rules]]
 id = "sourcegraph-access-token"
 description = "Sourcegraph access token"
 regex = '''(?i)\b(sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}|sgp_[a-fA-F0-9]{40})\b'''
 keywords = ["sgp_"]
-
-[[rules]]
-id = "aws-access-key"
-description = "AWS Access Key"
-regex = '''AKIA[0-9A-Z]{16}'''
-tags = ["aws", "key", "generic"]
-
-[[rules]]
-id = "github-token"
-description = "GitHub Token"
-regex = '''ghp_[A-Za-z0-9]{36,}'''
-tags = ["github", "token", "generic"]
-
-[[rules]]
-id = "slack-webhook"
-description = "Slack Webhook"
-regex = '''https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+'''
-tags = ["slack", "webhook", "generic"]
-
-[[rules]]
-id = "private-key"
-description = "Private Key"
-regex = '''-----BEGIN PRIVATE KEY-----[\s\S]+?-----END PRIVATE KEY-----'''
-tags = ["private", "key", "generic"]
 
 [[rules]]
 id = "hardcoded-password"
@@ -105,12 +85,6 @@ regex = '''(?i)(salesforce.*(token|key|secret))\s*=\s*["'][^"']{6,}["']'''
 tags = ["salesforce", "token", "secret"]
 
 [[rules]]
-id = "google-api-key"
-description = "Google API Key"
-regex = '''AIza[0-9A-Za-z\\-_]{35}'''
-tags = ["google", "api", "key"]
-
-[[rules]]
 id = "gcp-service-account"
 description = "GCP Service Account"
 regex = '''\"type\": \"service_account\"'''
@@ -127,30 +101,6 @@ id = "jwt-secret"
 description = "JWT Secret"
 regex = '''(?i)(jwt.*secret)\s*=\s*["'][^"']{6,}["']'''
 tags = ["jwt", "secret"]
-
-[[rules]]
-id = "stripe-api-key"
-description = "Stripe API Key"
-regex = '''sk_live_[0-9a-zA-Z]{24}'''
-tags = ["stripe", "api", "key"]
-
-[[rules]]
-id = "twilio-api-key"
-description = "Twilio API Key"
-regex = '''SK[0-9a-fA-F]{32}'''
-tags = ["twilio", "api", "key"]
-
-[[rules]]
-id = "sendgrid-api-key"
-description = "SendGrid API Key"
-regex = '''SG\.[A-Za-z0-9_\-]{22}\.[A-Za-z0-9_\-]{43}'''
-tags = ["sendgrid", "api", "key"]
-
-[[rules]]
-id = "pem-private-key"
-description = "PEM Private Key"
-regex = '''-----BEGIN (RSA |DSA |EC |)PRIVATE KEY-----[\s\S]+?-----END (RSA |DSA |EC |)PRIVATE KEY-----'''
-tags = ["pem", "private", "key"]
 
 [[rules]]
 id = "oauth-client-secret"

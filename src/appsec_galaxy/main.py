@@ -113,18 +113,6 @@ except ImportError:
     RUBOCOP_AVAILABLE = False
 
 try:
-    from appsec_galaxy.scanners.clippy import run_clippy
-    CLIPPY_AVAILABLE = True
-except ImportError:
-    CLIPPY_AVAILABLE = False
-
-try:
-    from appsec_galaxy.scanners.phpstan import run_phpstan
-    PHPSTAN_AVAILABLE = True
-except ImportError:
-    PHPSTAN_AVAILABLE = False
-
-try:
     from appsec_galaxy.scanners.swiftlint import run_swiftlint
     SWIFTLINT_AVAILABLE = True
 except ImportError:
@@ -667,25 +655,10 @@ async def run_security_scans_async(repo_path: str, scanners_to_run: list[str], o
             })
             logger.debug("Added RuboCop to scan pipeline")
 
-        # Rust - Clippy
-        if 'rust' in detected_languages and CLIPPY_AVAILABLE:
-            scanner_tasks.append({
-                'name': 'clippy',
-                'display_name': 'Clippy (Code Quality)',
-                'func': lambda: run_clippy(repo_path, str(output_dir / "raw")),
-                'category': 'code_quality'
-            })
-            logger.debug("Added Clippy to scan pipeline")
-
-        # PHP - PHPStan
-        if 'php' in detected_languages and PHPSTAN_AVAILABLE:
-            scanner_tasks.append({
-                'name': 'phpstan',
-                'display_name': 'PHPStan (Code Quality)',
-                'func': lambda: run_phpstan(repo_path, str(output_dir / "raw")),
-                'category': 'code_quality'
-            })
-            logger.debug("Added PHPStan to scan pipeline")
+        # Rust and PHP get no code-quality linter on purpose: Clippy compiles
+        # the repo (build.rs, proc macros) and PHPStan loads its autoloader,
+        # both of which execute scanned-repo code. Semgrep, gitleaks, and
+        # trivy still cover those languages.
 
         # Swift - SwiftLint
         if 'swift' in detected_languages and SWIFTLINT_AVAILABLE:

@@ -125,6 +125,10 @@ def run_gitleaks(repo_path: str, output_dir: Path | None = None) -> list:
             "--no-banner",
             "--exit-code", "0"  # Don't fail CI on findings
         ]
+        if not git_dir.exists():
+            # Without this gitleaks tries to open the directory as a git repo,
+            # fails, and writes an empty report that looks like a clean scan.
+            cmd.append("--no-git")
 
         logger.debug(f"Gitleaks command: {' '.join(cmd)}")
 
@@ -137,8 +141,9 @@ def run_gitleaks(repo_path: str, output_dir: Path | None = None) -> list:
         if result.stderr:
             logger.debug(f"Gitleaks stderr: {result.stderr}")
 
-        # Gitleaks exits with code 1 when it finds secrets, which is normal
-        if result.returncode not in (0, 1):
+        # --exit-code 0 makes findings exit 0, so any non-zero exit is a
+        # real failure (never "found secrets") and must not read as clean.
+        if result.returncode != 0:
             error_details = format_subprocess_error('gitleaks', result.returncode, result.stderr, result.stdout)
             logger.error(error_details)
             return []
@@ -184,8 +189,8 @@ def run_gitleaks(repo_path: str, output_dir: Path | None = None) -> list:
                     logger.warning(f"Unexpected Gitleaks output format: {type(results)}")
                     return []
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse Gitleaks JSON output: {e}")
-                logger.debug(f"Raw content: {content[:500]}...")  # First 500 chars
+                # Never log the raw content: it holds plaintext secret values.
+                logger.error(f"Failed to parse Gitleaks JSON output ({len(content)} bytes): {e}")
                 return []
         else:
             logger.debug("Gitleaks found no secrets (no output file)")

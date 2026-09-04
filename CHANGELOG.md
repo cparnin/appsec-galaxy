@@ -7,6 +7,62 @@ semantic versioning.
 
 ### Security
 
+- MCP scans run the scanner with Python's safe-path flag (`-P`). `python -m`
+  put the scanned repo's directory first on `sys.path`, so a hostile repo
+  shipping a `dotenv/` package ran its code inside the scanner process with
+  the provider keys in its environment.
+- The AI file selector skips symlinks and anything that resolves outside
+  the repo, and a model-supplied finding path can no longer be opened
+  outside the repo. A repo could symlink `auth_config.py` to
+  `~/.aws/credentials` and have it sent to the AI provider.
+- Auto-remediation stages only the files it changed (`git add -- <files>`
+  plus regenerated lockfiles) instead of `git add .`, which swept an
+  untracked `.env` or leftover backup into the pull request.
+- Code-quality linters never load the scanned repo's own configuration:
+  the bundled config wins, pylint gets `--rcfile=/dev/null`, ESLint runs
+  with `--no-config-lookup` / `--no-eslintrc`. Linter configs execute code
+  (pylint `init-hook`, JavaScript ESLint configs, RuboCop `require:`).
+  Clippy and PHPStan are removed: both execute repo code by design (cargo
+  build scripts, the PHP autoloader) and, because their JSON went to stdout
+  that the base class discarded, neither had ever produced a finding.
+- The MCP scan-root allowlist no longer includes the home directory and
+  the server's working directory by default (defaults are `~/repos` and
+  `~/projects`), and fuzzy repo matching skips dotfiles, so a client cannot
+  reach `~/.ssh` or `~/.aws` by name.
+- The Action and self-scan artifacts exclude `raw/gitleaks.json`, which
+  carries plaintext secret values; self-scan retention drops to 30 days.
+- `/scan` rejects a non-boolean `auto_fix` (the string `"false"` was truthy
+  and turned on the commit/push/PR path), an unknown `scan_level`, an
+  invalid `auto_fix_mode`, and a non-list `selected_tools`.
+- Gitleaks no longer logs raw report content (secret values) on a JSON
+  parse failure.
+
+### Fixed
+
+- Gitleaks reported a clean scan on any non-git directory: without
+  `--no-git` it failed to open the "repository" and wrote an empty report.
+  It now passes `--no-git` when `.git` is absent, and any non-zero exit is
+  treated as a failure (with `--exit-code 0`, findings never exit 1).
+- The bundled gitleaks config's custom `private-key` and `pem-private-key`
+  rules replaced upstream's rule of the same id and lost OpenSSH/PGP key
+  detection. Both are removed, along with seven custom rules that
+  duplicated an upstream shape under a different id and made every AWS,
+  GitHub, Slack, Google, Stripe, SendGrid, and Twilio secret report twice.
+- golangci-lint and SwiftLint print their JSON report to stdout; the
+  quality-scanner base now saves stdout for tools that declare
+  `reads_stdout`, so both return findings. golangci-lint v2 (new config
+  schema and output flags) is supported alongside v1.
+- Checkstyle exits with its violation count; the base class treated 2+ as
+  a crash and dropped every finding. Tools now declare their own fatal
+  exit codes.
+- One ESLint parse error (`ruleId: null`) raised inside the parser and
+  dropped every ESLint finding. `--ext` is no longer passed to ESLint 9,
+  which rejects it under flat config.
+- `APPSEC_AI_SCAN_MAX_COST=''` (what the GitHub Action exports when the
+  input is left blank) failed pydantic float parsing at startup, so every
+  client run of v2.6.3 crashed before scanning. Empty env vars now count
+  as unset for all `APPSEC_*` settings.
+
 - The bundled gitleaks config now extends the upstream default ruleset
   (`[extend] useDefault = true`), adding 150+ maintained provider rules on
   top of the 20 hand-written ones. Detection was previously frozen at the

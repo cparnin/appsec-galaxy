@@ -249,5 +249,9 @@ runs:
       if: always()
       with:
         name: security-reports
-        path: ${{ github.action_path }}/outputs/
-        retention-days: 30 
+        # raw/gitleaks.json carries plaintext secret values; never publish it
+        # as a downloadable artifact.
+        path: |
+          ${{ github.action_path }}/outputs/
+          !${{ github.action_path }}/outputs/**/raw/gitleaks.json
+        retention-days: 30

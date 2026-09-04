@@ -101,7 +101,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AppSecGalaxySettings(BaseSettings):
     """All APPSEC_* env vars consumed by config.py, validated at startup."""
 
-    model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
+    # env_ignore_empty: a GitHub Action input left at its default exports the
+    # env var as an empty string; treat that as unset instead of failing
+    # float/int parsing at startup.
+    model_config = SettingsConfigDict(extra="ignore", populate_by_name=True, env_ignore_empty=True)
 
     # Code quality scanning (ON by default). Linter findings filtered by
     # min severity: critical, high, medium, low, all.

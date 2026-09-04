@@ -89,8 +89,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: appsec-galaxy-self-scan-outputs
-          path: outputs/
-          retention-days: 90
+          path: |
+            outputs/
+            !outputs/**/raw/gitleaks.json
+          retention-days: 30
 
       - name: Fail on critical findings
         run: python scripts/fail_on_critical.py

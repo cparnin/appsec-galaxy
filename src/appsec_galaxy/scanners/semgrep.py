@@ -18,7 +18,7 @@ def _categorize_finding(check_id: str) -> str:
     Categorize a Semgrep finding as 'security' only.
 
     Note: Semgrep is ONLY used for security analysis. Code quality is handled
-    by language-specific linters (Pylint, ESLint, Clippy, RuboCop, etc.)
+    by language-specific linters (Pylint, ESLint, RuboCop, etc.)
 
     Args:
         check_id: Semgrep check ID (e.g., 'javascript.lang.security.audit.sqli')

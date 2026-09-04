@@ -7,6 +7,7 @@ code smells, and potential bugs in Python codebases.
 
 import subprocess
 import json
+import os
 from pathlib import Path
 
 from appsec_galaxy.config import format_subprocess_error
@@ -211,6 +212,10 @@ def run_pylint(repo_path: str, output_dir: str | None = None) -> list:
         # Build Pylint command
         cmd = [
             'pylint',
+            # Never load the repo's own pylintrc / pyproject [tool.pylint]:
+            # init-hook and load-plugins there execute arbitrary Python, and
+            # scanned repos are hostile input. The flags below are the config.
+            f'--rcfile={os.devnull}',
             '--output-format=json',
             '--reports=no',  # Disable report generation
             '--score=no',    # Disable score

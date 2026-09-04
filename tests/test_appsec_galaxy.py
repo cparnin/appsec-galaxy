@@ -82,7 +82,15 @@ def test_gitleaks_config_extends_upstream_ruleset():
     assert "[extend]" in config
     assert re.search(r"^\s*useDefault\s*=\s*true", config, re.M)
     # The custom rules cover shapes the defaults miss; they must survive.
-    assert len(re.findall(r"^\[\[rules\]\]", config, re.M)) >= 20
+    assert len(re.findall(r"^\[\[rules\]\]", config, re.M)) >= 10
+    # Custom rules that duplicate an upstream shape under a different id
+    # made every such secret report twice; a custom rule that REUSES an
+    # upstream id replaces it (see the sourcegraph override), so the old
+    # narrower "private-key" rule silently lost OpenSSH/PGP detection.
+    ids = set(re.findall(r'^id = "([^"]+)"', config, re.M))
+    assert not ids & {"aws-access-key", "github-token", "slack-webhook", "google-api-key",
+                      "stripe-api-key", "sendgrid-api-key", "twilio-api-key",
+                      "private-key", "pem-private-key"}
     # The bundled config is applied to *scanned* repos, so a broad path
     # allowlist here would hide real secrets in someone else's repository.
     # Repo-local noise belongs in this repo's .gitleaksignore instead.
@@ -107,6 +115,45 @@ def test_gitleaks_sourcegraph_rule_requires_token_prefix():
     assert pattern.search(f'token = "sgp_{"b" * 16}_{sha1}"')
     assert pattern.search(f'token = "sgp_local_{sha1}"')
     assert pattern.search(f'token = "sgp_{sha1}"')
+
+
+@pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks binary not installed")
+def test_gitleaks_binary_detects_openssh_key_and_reports_aws_key_once(tmp_path):
+    """Regression: a custom "private-key" rule shadowed upstream's broader
+    one (OpenSSH keys went undetected), and duplicate custom rules made an
+    AWS key show up twice."""
+    import json as _json
+    checkout_root = Path(__file__).resolve().parent.parent
+    (tmp_path / "id_ed25519").write_text(
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n"
+        "-----END OPENSSH PRIVATE KEY-----\n")
+    (tmp_path / "settings.py").write_text('AWS_KEY = "AKIAZ9Q4XK2LM7PT3RVB"\n')
+    report = tmp_path / "gl.json"
+    subprocess.run(
+        ["gitleaks", "detect", "--no-git", "--source", str(tmp_path),
+         "--config", str(checkout_root / "configs" / ".gitleaks.toml"),
+         "--report-format", "json", "--report-path", str(report),
+         "--no-banner", "--exit-code", "0"],
+        check=True, capture_output=True, timeout=60,
+    )
+    hits = _json.loads(report.read_text()) if report.exists() else []
+    by_file: dict[str, list[str]] = {}
+    for h in hits:
+        by_file.setdefault(Path(h["File"]).name, []).append(h["RuleID"])
+    assert "private-key" in by_file.get("id_ed25519", [])
+    assert len(by_file.get("settings.py", [])) == 1
+
+
+@pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks binary not installed")
+def test_run_gitleaks_scans_a_plain_directory(tmp_path):
+    """Regression: without --no-git, gitleaks treated a non-git directory as
+    a broken repo and wrote an empty report that looked like a clean scan."""
+    from appsec_galaxy.scanners.gitleaks import run_gitleaks
+    (tmp_path / "settings.py").write_text('AWS_KEY = "AKIAZ9Q4XK2LM7PT3RVB"\n')
+    out = tmp_path / "out"
+    results = run_gitleaks(str(tmp_path), out)
+    assert results, "secret in a plain (non-git) directory must be reported"
+    assert all("Secret" not in r and "Match" not in r for r in results)
 
 
 @pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks binary not installed")
@@ -359,6 +406,42 @@ class TestGitleaks:
     @patch('appsec_galaxy.scanners.gitleaks.subprocess.run')
     @patch('appsec_galaxy.scanners.gitleaks.validate_binary_path')
     @patch('appsec_galaxy.scanners.gitleaks.validate_repo_path')
+    def test_nonzero_exit_is_an_error_not_findings(
+        self, mock_validate_repo, mock_validate_binary, mock_subprocess,
+        mock_repo, output_dir, sample_gitleaks_output
+    ):
+        """--exit-code 0 makes findings exit 0, so exit 1 is a failure and a
+        partial report must not be parsed as a result."""
+        mock_validate_binary.return_value = 'gitleaks'
+        mock_validate_repo.return_value = mock_repo
+        output_file = output_dir / "gitleaks.json"
+
+        def mock_run(*args, **kwargs):
+            output_file.write_text(json.dumps(sample_gitleaks_output))
+            result = Mock()
+            result.returncode = 1
+            result.stdout, result.stderr = "", "failed to scan Git repository"
+            return result
+
+        mock_subprocess.side_effect = mock_run
+        assert run_gitleaks(str(mock_repo), output_dir) == []
+
+    @patch('appsec_galaxy.scanners.gitleaks.subprocess.run')
+    @patch('appsec_galaxy.scanners.gitleaks.validate_binary_path')
+    @patch('appsec_galaxy.scanners.gitleaks.validate_repo_path')
+    def test_plain_directory_gets_no_git_flag(
+        self, mock_validate_repo, mock_validate_binary, mock_subprocess, tmp_path, output_dir
+    ):
+        mock_validate_binary.return_value = 'gitleaks'
+        mock_validate_repo.return_value = tmp_path  # no .git inside
+        result = Mock(returncode=0, stdout="", stderr="")
+        mock_subprocess.return_value = result
+        run_gitleaks(str(tmp_path), output_dir)
+        assert '--no-git' in mock_subprocess.call_args[0][0]
+
+    @patch('appsec_galaxy.scanners.gitleaks.subprocess.run')
+    @patch('appsec_galaxy.scanners.gitleaks.validate_binary_path')
+    @patch('appsec_galaxy.scanners.gitleaks.validate_repo_path')
     def test_success_with_findings(
         self, mock_validate_repo, mock_validate_binary, mock_subprocess,
         mock_repo, output_dir, sample_gitleaks_output
@@ -371,7 +454,7 @@ class TestGitleaks:
         def mock_run(*args, **kwargs):
             output_file.write_text(json.dumps(sample_gitleaks_output))
             result = Mock()
-            result.returncode = 1  # Gitleaks returns 1 when secrets found
+            result.returncode = 0  # --exit-code 0: findings never change the exit code
             result.stdout = result.stderr = ""
             return result
 
@@ -482,7 +565,7 @@ class TestSecretConfidence:
         def mock_run(*args, **kwargs):
             output_file.write_text(json.dumps(sample_gitleaks_output))
             result = Mock()
-            result.returncode = 1
+            result.returncode = 0  # --exit-code 0: findings never change the exit code
             result.stdout = result.stderr = ""
             return result
 
@@ -1408,6 +1491,20 @@ class TestRemediationSandboxing:
         }))
         (tmp_path / lockfile).write_text('{}')
         return str(tmp_path / 'package.json')
+
+    def test_commit_stages_only_touched_files(self, tmp_path, monkeypatch):
+        """Regression: `git add .` swept an untracked .env (or a leftover
+        manifest backup) into the auto-fix pull request."""
+        import subprocess as sp
+        calls = []
+        monkeypatch.setattr(sp, 'run', lambda cmd, **kw: calls.append(cmd) or Mock(returncode=0, stdout=''))
+        r = self._remediator()
+        (tmp_path / 'package.json').write_text('{}')
+        (tmp_path / 'package-lock.json').write_text('{}')
+        r._stage_touched_files(str(tmp_path), [{'file_path': 'package.json'}], ('package-lock.json',))
+        assert calls == [['git', 'add', '--', 'package-lock.json', 'package.json']]
+        with pytest.raises(ValueError):
+            r._stage_touched_files(str(tmp_path), [])
 
     def test_npm_lockfile_regen_ignores_scripts(self, tmp_path):
         pkg = self._write_pkg(tmp_path, 'package-lock.json')
@@ -2952,6 +3049,29 @@ class TestAIScannerDiffScope:
         (tmp_path / 'untouched.py').write_text('y = 2\n')
         return tmp_path
 
+    def test_symlinks_are_never_read(self, tmp_path):
+        """Regression: a hostile repo could symlink auth_config.py to
+        ~/.aws/credentials and the contents were sent to the AI provider."""
+        from appsec_galaxy.scanners.ai_scanner import _select_security_files
+        outside = tmp_path.parent / f'{tmp_path.name}-outside.py'
+        outside.write_text('SECRET = "outside the repo"\n')
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        (repo / 'auth_config.py').symlink_to(outside)
+        (repo / 'login.py').write_text('def login(): pass\n')
+        selected = _select_security_files(repo)
+        assert [f['path'] for f in selected] == ['login.py']
+
+    def test_model_supplied_path_cannot_escape_repo(self, tmp_path):
+        from appsec_galaxy.scanners.ai_scanner import _validate_finding
+        repo = tmp_path / 'repo'
+        repo.mkdir()
+        outside = tmp_path / 'secret.py'
+        outside.write_text('x = 1\n')
+        finding = {'file': '../secret.py', 'line': 1, 'vulnerability_type': 'x',
+                   'severity': 'high', 'confidence': 0.99, 'description': 'd'}
+        assert _validate_finding(finding, repo) is None
+
     def test_diff_only_restricts_candidates_to_changed_files(self, monkeypatch, tmp_path):
         from appsec_galaxy import scan_filters
         from appsec_galaxy.scanners.ai_scanner import _select_security_files
@@ -3362,6 +3482,48 @@ class TestMCPServerTools:
         import appsec_galaxy_mcp_server
         return appsec_galaxy_mcp_server
 
+    def test_scan_subprocess_uses_safe_path(self, mcp_module, monkeypatch, tmp_path):
+        """Regression: `python -m` with cwd=repo put the scanned repo first on
+        sys.path, so a repo shipping dotenv/__init__.py ran its code inside
+        the scanner (with provider keys in the environment). -P prevents it."""
+        import threading
+        core = mcp_module.AppSecGalaxyMCPCore.__new__(mcp_module.AppSecGalaxyMCPCore)
+        core._active_scans = {}
+        core._active_scans_lock = threading.Lock()
+        core.is_scan_running = lambda p: False
+        core._find_python_executable = lambda: '/usr/bin/python3'
+        core._build_scan_env = lambda: {}
+        captured = {}
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                captured['cmd'] = args[1]
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(mcp_module.threading, 'Thread', FakeThread)
+        core.start_scan(str(tmp_path))
+        assert captured['cmd'][:3] == ['/usr/bin/python3', '-P', '-m']
+
+    def test_default_allowed_roots_exclude_home_and_cwd(self, mcp_module, monkeypatch):
+        """Regression: "~" and "." were allowed roots, so the allowlist let a
+        client scan ~/.ssh or wherever the server happened to start."""
+        monkeypatch.delenv('APPSEC_MCP_ALLOWED_ROOTS', raising=False)
+        monkeypatch.delenv('REPO_SEARCH_PATHS', raising=False)
+        core = mcp_module.AppSecGalaxyMCPCore.__new__(mcp_module.AppSecGalaxyMCPCore)
+        roots = core._find_repo_search_paths()
+        home = os.path.expanduser('~')
+        assert home not in roots and '.' not in roots
+        assert all(r.startswith(home + os.sep) for r in roots)
+
+    def test_fuzzy_match_never_resolves_dotfiles(self, mcp_module, monkeypatch, tmp_path):
+        (tmp_path / '.aws').mkdir()
+        monkeypatch.setenv('APPSEC_MCP_ALLOWED_ROOTS', str(tmp_path))
+        core = mcp_module.AppSecGalaxyMCPCore.__new__(mcp_module.AppSecGalaxyMCPCore)
+        with pytest.raises(ValueError):
+            core.find_repo('aws')
+
     def test_gitleaks_normalizer_includes_confidence(self, mcp_module):
         f = mcp_module._normalize_gitleaks({'Description': 'key', 'RuleID': 'r',
                                             'File': 'a.py', 'StartLine': 1,
@@ -3702,6 +3864,20 @@ class TestWebAppSmoke:
         assert response.status_code == 400
         assert 'ai_scan_tier' in response.get_json()['error']
 
+    @pytest.mark.parametrize("body, needle", [
+        ({'auto_fix': 'false'}, 'auto_fix must be a JSON boolean'),
+        ({'auto_fix': True, 'auto_fix_mode': '9'}, 'auto_fix_mode'),
+        ({'scan_level': 'high'}, 'scan_level'),
+        ({'selected_tools': 'semgrep'}, 'selected_tools'),
+    ])
+    def test_scan_rejects_malformed_inputs(self, client, body, needle):
+        """Regression: the string "false" is truthy, so auto_fix="false"
+        committed, pushed, and opened PRs; an unknown scan_level made semgrep
+        drop every finding (a clean-looking scan)."""
+        response = client.post('/scan', json={'repo_path': '/tmp/repo', **body})
+        assert response.status_code == 400
+        assert needle in response.get_json()['error']
+
     def test_scan_rejects_ai_scan_at_low_tier(self, client):
         """The AI scanner sends full source; tiers 1 and 2 forbid that, so a
         request asking for both must fail fast, not silently skip the scan."""
@@ -4021,6 +4197,17 @@ class TestAppSecGalaxySettings:
         for k, v in env.items():
             monkeypatch.setenv(k, v)
         return AppSecGalaxySettings()
+
+    def test_empty_env_values_count_as_unset(self, monkeypatch):
+        """Regression: the GitHub Action exports every input, so an input left
+        at its default arrives as APPSEC_AI_SCAN_MAX_COST='' and float parsing
+        failed at startup (every client run on v2.6.3)."""
+        s = self._fresh(monkeypatch, APPSEC_AI_SCAN_MAX_COST='', APPSEC_AI_SCAN_MAX_FILES='',
+                        APPSEC_AI_SCAN_TIER='', APPSEC_AI_SCAN_DEPTH='')
+        assert s.ai_scan_max_cost == 0.0
+        assert s.ai_scan_max_files == 50
+        assert s.ai_scan_tier == 3
+        assert s.ai_scan_depth == 'standard'
 
     def test_defaults(self, monkeypatch):
         s = self._fresh(monkeypatch)
@@ -5449,3 +5636,117 @@ class TestRepoDiscoveryScope:
         resp = client.get('/discover-repos')
         assert resp.status_code == 403
         assert 'polic' in resp.get_json()['error'].lower()
+
+
+# ============================================================================
+# Code-quality scanner base (stdout capture, config priority, exit codes)
+# ============================================================================
+
+class TestQualityScannerBase:
+    """Regressions from the full-app review: golangci-lint and swiftlint print
+    JSON to stdout that the base class discarded (always 0 findings), repo
+    configs were preferred over bundled ones (linter configs execute code),
+    and Checkstyle's violation-count exit code was treated as a crash."""
+
+    def _scanner(self, tmp_path, **overrides):
+        from appsec_galaxy.scanners.quality_scanner_base import QualityScannerBase
+
+        class Fake(QualityScannerBase):
+            tool_name = 'fake'
+            display_name = 'Fake'
+            check_command = ['fake', '--version']
+            languages = ['x']
+
+            def get_repo_config_paths(self, repo_path):
+                return [repo_path / '.fakerc']
+
+            def get_bundled_config_path(self, repo_path):
+                return overrides.get('bundled')
+
+            def build_scan_command(self, repo_path, output_file, config_path):
+                self.seen_config = config_path
+                return ['fake']
+
+            def normalize_finding(self, raw, repo_path):
+                return {'tool': 'fake', 'category': 'code_quality', 'severity': 'medium',
+                        'check_id': raw['id'], 'path': 'a', 'extra': {'message': ''}}
+
+        s = Fake()
+        for k, v in overrides.items():
+            if k != 'bundled':
+                setattr(s, k, v)
+        s.check_installed = lambda: True
+        return s
+
+    def _run(self, scanner, monkeypatch, tmp_path, returncode=0, stdout=''):
+        import subprocess as sp
+        monkeypatch.setattr(sp, 'run', lambda *a, **k: Mock(returncode=returncode, stdout=stdout, stderr=''))
+        repo = tmp_path / 'repo'
+        repo.mkdir(exist_ok=True)
+        return scanner.run_scan(str(repo), str(tmp_path / 'out'))
+
+    def test_stdout_json_is_captured_when_declared(self, monkeypatch, tmp_path):
+        s = self._scanner(tmp_path, reads_stdout=True)
+        findings = self._run(s, monkeypatch, tmp_path, stdout='[{"id": "r1"}, {"id": "r2"}]')
+        assert [f['check_id'] for f in findings] == ['r1', 'r2']
+        assert (tmp_path / 'out' / 'fake.json').exists()
+
+    def test_bundled_config_wins_over_repo_config(self, monkeypatch, tmp_path):
+        bundled = tmp_path / 'bundled.cfg'
+        bundled.write_text('')
+        (tmp_path / 'repo').mkdir()
+        (tmp_path / 'repo' / '.fakerc').write_text('init-hook=evil')
+        s = self._scanner(tmp_path, bundled=bundled)
+        self._run(s, monkeypatch, tmp_path)
+        assert s.seen_config == bundled
+
+    def test_repo_config_only_when_nothing_is_bundled(self, monkeypatch, tmp_path):
+        (tmp_path / 'repo').mkdir()
+        (tmp_path / 'repo' / '.fakerc').write_text('')
+        s = self._scanner(tmp_path)
+        self._run(s, monkeypatch, tmp_path)
+        assert s.seen_config == tmp_path / 'repo' / '.fakerc'
+
+    def test_fatal_exit_without_output_yields_nothing(self, monkeypatch, tmp_path):
+        s = self._scanner(tmp_path, reads_stdout=True)
+        assert self._run(s, monkeypatch, tmp_path, returncode=2, stdout='') == []
+
+    def test_checkstyle_exit_code_is_a_count_not_a_failure(self):
+        from appsec_galaxy.scanners.checkstyle import CheckstyleScanner
+        assert CheckstyleScanner().is_fatal_exit(7) is False
+
+    def test_swiftlint_and_golangci_read_stdout(self):
+        from appsec_galaxy.scanners.swiftlint import SwiftLintScanner
+        from appsec_galaxy.scanners.golangci_lint import GolangCILintScanner
+        assert SwiftLintScanner.reads_stdout and GolangCILintScanner.reads_stdout
+
+    def test_pylint_never_loads_repo_rcfile(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        from appsec_galaxy.scanners import pylint as pl
+        calls = []
+        monkeypatch.setattr(sp, 'run', lambda cmd, **k: calls.append(cmd) or Mock(returncode=0, stdout='[]', stderr=''))
+        monkeypatch.setattr(pl, 'check_pylint_installed', lambda: True, raising=False)
+        (tmp_path / 'a.py').write_text('x = 1\n')
+        pl.run_pylint(str(tmp_path), str(tmp_path / 'out'))
+        pylint_cmd = next((c for c in calls if c and c[0] == 'pylint'), None)
+        assert pylint_cmd is not None
+        assert any(a.startswith('--rcfile=') for a in pylint_cmd)
+
+    def test_eslint_uses_bundled_config_and_ignores_repo_config(self, monkeypatch, tmp_path):
+        import subprocess as sp
+        from appsec_galaxy.scanners import eslint as es
+        calls = []
+
+        def fake_run(cmd, **k):
+            calls.append(cmd)
+            return Mock(returncode=0, stdout='v9.30.0\n', stderr='')
+
+        monkeypatch.setattr(sp, 'run', fake_run)
+        monkeypatch.setattr(es, 'check_eslint_installed', lambda: True)
+        (tmp_path / 'eslint.config.js').write_text('process.exit(1)')
+        (tmp_path / 'a.js').write_text('var x = 1\n')
+        es.run_eslint(str(tmp_path), str(tmp_path / 'out'))
+        eslint_cmd = next(c for c in calls if c[0] == 'eslint' and c[1] != '--version')
+        assert '--no-config-lookup' in eslint_cmd
+        assert '--ext' not in eslint_cmd
+        assert str(tmp_path / 'eslint.config.js') not in eslint_cmd

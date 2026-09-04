@@ -577,8 +577,19 @@ def _select_security_files(repo_path: Path, max_files: int = 50) -> list[dict[st
         else:
             logger.info(f"AI scanner: diff-only scope active ({len(diff_scope)} changed files)")
 
+    repo_root = repo_path.resolve()
     for file_path in repo_path.rglob('*'):
         if file_path.is_dir():
+            continue
+
+        # A hostile repo can symlink to ~/.aws/credentials or /etc/shadow;
+        # the file would otherwise be read and sent to the AI provider.
+        if file_path.is_symlink():
+            continue
+        try:
+            if not file_path.resolve().is_relative_to(repo_root):
+                continue
+        except OSError:
             continue
 
         if diff_scope is not None and file_path.relative_to(repo_path).as_posix() not in diff_scope:
@@ -827,10 +838,15 @@ def _validate_finding(finding: dict, repo_path: Path) -> dict[str, Any] | None:
         logger.debug(f"AI finding rejected: confidence {confidence} < {AI_SCAN_MIN_CONFIDENCE} for {file_rel}:{line_num}")
         return None
 
-    # Validate file exists
+    # Validate file exists and stays inside the repo (the path is model
+    # output: an absolute or ../ path must never be opened)
     file_path = repo_path / file_rel
-    if not file_path.exists() or not file_path.is_file():
-        logger.warning(f"AI finding rejected: file does not exist: {file_rel}")
+    try:
+        confined = file_path.resolve().is_relative_to(repo_path.resolve())
+    except OSError:
+        confined = False
+    if not confined or file_path.is_symlink() or not file_path.is_file():
+        logger.warning(f"AI finding rejected: file does not exist in repo: {file_rel}")
         return None
 
     # Validate line number is within file

@@ -1,0 +1,31 @@
+# AppSec Galaxy default golangci-lint configuration (v2 schema).
+# golangci.yml is the v1 equivalent; the scanner picks one by tool version.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: false
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      check-blank: false
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
