@@ -21,19 +21,19 @@ Set credentials in the process that launches the MCP server:
 
 ```bash
 export APPSEC_GALAXY_PATH="$PWD"
-export OPENAI_API_KEY="your-openai-api-key-here"  # optional until AI is used
-# Or use Claude models instead:
-# export AI_PROVIDER="anthropic"
-# export ANTHROPIC_API_KEY="your-anthropic-api-key-here"
-export GITHUB_TOKEN="your-github-token-here"      # required only for PR creation
+export ANTHROPIC_API_KEY="your-anthropic-api-key-here"  # optional until AI is used
+# Or use OpenAI models instead:
+# export AI_PROVIDER="openai"
+# export OPENAI_API_KEY="your-openai-api-key-here"
+export GITHUB_TOKEN="your-github-token-here"            # required only for PR creation
 ```
 
 Do not put credentials in MCP client configuration. Importing and initializing
-the server does not construct an OpenAI client or require a key.
+the server does not construct a provider client or require a key.
 
 ## Codex configuration
 
-The repository includes this local configuration:
+Create `.codex/config.toml` (git-ignored) with:
 
 ```toml
 [mcp_servers.appsec-galaxy]
@@ -67,7 +67,7 @@ Restart the client after updating its MCP configuration.
 | Tool | Purpose |
 | --- | --- |
 | `scan_repository` | Start a full scan in the background |
-| `auto_remediate` | Generate constrained fixes and draft PRs |
+| `auto_remediate` | Generate constrained fixes and open PRs |
 | `get_report` | Read the current findings summary |
 | `generate_sbom` | Generate CycloneDX/SPDX SBOMs |
 | `cross_file_analysis` | Analyze entry points, sinks, and attack paths |
@@ -95,13 +95,13 @@ Scans run asynchronously; poll `get_scan_findings` for completion.
 | `appsec-galaxy://{repo}/sbom.cyclonedx.json` | CycloneDX SBOM |
 | `appsec-galaxy://{repo}/sbom.spdx.json` | SPDX SBOM |
 
-`{repo}` may be a repository name or a validated path. Resources return the
-current artifact under `outputs/<repository>/`.
+`{repo}` is a repository NAME (a single path segment), not a path: the
+resource template matches one segment. Resources return the current
+artifact under `outputs/<repository>/`. Use the tools for path targets.
 
 ## Optional Claude Desktop compatibility
 
-Claude Desktop can use the same stdio JSON configuration shown above. This is
-an MCP compatibility option only; AppSec Galaxy's AI provider remains OpenAI.
+Claude Desktop can use the same stdio JSON configuration shown above.
 
 ## Troubleshooting
 
@@ -110,14 +110,14 @@ an MCP compatibility option only; AppSec Galaxy's AI provider remains OpenAI.
 | Server cannot find the installation | Set `APPSEC_GALAXY_PATH` or launch from the checkout |
 | No tools appear | Confirm absolute paths, JSON/TOML syntax, and restart the client |
 | Repository not found | Pass an absolute path or set `REPO_SEARCH_PATHS` |
-| AI feature unavailable | Export a valid `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY` with `AI_PROVIDER=anthropic`) in the server process |
+| AI feature unavailable | Export a valid `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY` with `AI_PROVIDER=openai`) in the server process |
 | PR creation unavailable | Export `GITHUB_TOKEN` with repository permissions |
 | Scanner missing | Install the external binary and confirm it is on `PATH` |
 
 Smoke-test the server module without a live model call:
 
 ```bash
-env -u OPENAI_API_KEY .venv/bin/python -c '
+env -u ANTHROPIC_API_KEY -u OPENAI_API_KEY .venv/bin/python -c '
 import importlib.util
 p = "mcp/appsec_galaxy_mcp_server.py"
 s = importlib.util.spec_from_file_location("appsec_galaxy_mcp_server", p)

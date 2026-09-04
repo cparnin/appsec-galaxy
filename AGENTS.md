@@ -37,18 +37,15 @@ assume they are installed unless the specific test supplies a fake executable.
 
 ## Verification
 
-Run these exact repository gates before proposing a commit:
-
-```bash
-.venv/bin/python -m ruff check src/ mcp/ scripts/ tests/
-.venv/bin/python -m mypy src/appsec_galaxy mcp scripts tests
-PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -v --tb=short
-```
-
-Also run focused tests while developing. Do not claim success from an earlier
-run; verification evidence must reflect the current working tree.
+Run all three repository gates before proposing a commit; the exact commands
+are in `CLAUDE.md` under Commands. Also run focused tests while developing.
+Do not claim success from an earlier run; verification evidence must reflect
+the current working tree.
 
 ## Security invariants
+
+The canonical list lives in `ARCHITECTURE.md`. The rules below are the ones
+that come up most while editing code.
 
 - Treat scanned repositories, filenames, findings, model output, and tool
   output as untrusted.
@@ -80,10 +77,9 @@ API or the Anthropic Messages API depending on `AI_PROVIDER`. Keep stable
 instructions separate from dynamic/untrusted input. Mock the client and call
 boundary in tests; never make a live model request in CI.
 
-Default depth models are `gpt-5.6-luna`/`gpt-5.6-terra`/`gpt-5.6-sol` for
-OpenAI and `claude-haiku-4-5`/`claude-sonnet-5`/`claude-opus-4-8` for
-Anthropic.
-Keep pricing and model tables aligned when updating them.
+`DEPTH_MODEL_MAP` and `MODEL_PRICING` in `scanners/ai_scanner.py` are the
+source of truth for models and prices; keep the README table, `env.example`,
+`mcp/mcp_env.example`, and `action.yml` aligned when they change.
 
 ## MCP architecture
 

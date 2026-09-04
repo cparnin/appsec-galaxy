@@ -10,7 +10,7 @@ machine-facing configuration.
 From the repository root:
 
 ```bash
-PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -v --tb=short
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -q
 ```
 
 `PYTHON_DOTENV_DISABLED=1` prevents tests from loading a developer's local
@@ -33,7 +33,7 @@ every SDK/model boundary, so CI never makes a live model request.
 - Mock subprocesses and optional scanner binaries unless the test explicitly
   verifies a locally available tool.
 - Never read `.env` or `mcp/mcp_env`.
-- Never construct a real OpenAI client or send a network request.
+- Never construct a real provider client or send a network request.
 - Assert fail-open behavior where failures must preserve findings.
 - Assert fail-closed behavior at credential, path, command, remediation, and
   output-sanitization boundaries.
@@ -42,9 +42,6 @@ every SDK/model boundary, so CI never makes a live model request.
 
 ## Quality gates
 
-```bash
-.venv/bin/python -m ruff check src/ mcp/ scripts/ tests/
-.venv/bin/python -m mypy src/appsec_galaxy mcp scripts tests
-```
-
-The GitHub workflow runs the full suite on Python 3.11, 3.12, and 3.13.
+Ruff, mypy, and pytest all gate CI; the exact commands are in `CLAUDE.md`
+under Commands. The GitHub workflow runs the full suite on Python 3.11,
+3.12, and 3.13.

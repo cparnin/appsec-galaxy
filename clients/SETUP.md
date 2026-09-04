@@ -28,24 +28,24 @@ git push
 
 ## What You Get
 
-- ✅ **Automated scans** on every PR
-- ✅ **AI-generated fixes** for code vulnerabilities
-- ✅ **Separate PRs** for code fixes vs dependency updates
-- ✅ **HTML reports** with business impact analysis
-- ✅ **Auto SBOM** (CycloneDX & SPDX) for compliance
-- ✅ **Artifacts** - Reports and SBOM files (90-day retention)
+- **Automated scans** on every PR
+- **AI-generated fixes** for code vulnerabilities
+- **Separate PRs** for code fixes vs dependency updates
+- **HTML reports** with business impact analysis
+- **Auto SBOM** (CycloneDX and SPDX) for compliance
+- **Artifacts** - reports and SBOM files (30-day retention; raw secret
+  output is deliberately excluded)
 
 ## Configuration Options
 
-Default settings (customize in `security-scan.yml`):
+What `security-scan.yml` sets, and what you can add:
 ```yaml
 with:
-  openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-  ai-model: ''                   # Optional model override
-  scan-level: 'critical-high'    # Or 'all' (affects security findings only)
-  auto-fix: 'true'               # Generate fix PRs (push events only)
-  auto-fix-mode: '3'             # 1=SAST, 2=deps, 3=both, 4=none
-  fail-on-critical: 'false'      # Don't break CI by default
+  anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}   # or openai-api-key with ai-provider: openai
+  # scan-level: 'critical-high'  # default; 'all' includes medium and low
+  # auto-fix: 'true'             # default; opens fix PRs on pushes and same-repo PRs
+  # auto-fix-mode: '3'           # 1=SAST, 2=deps, 3=both (unset = decided by findings)
+  # fail-on-critical: 'false'    # default; 'true' fails the build on critical findings
 
 # Note: Code quality findings are ALWAYS shown regardless of scan-level
 # Note: Auto-fix is forced off on FORK pull requests only. A fork PR is
@@ -56,7 +56,9 @@ with:
 
 ## Supported Languages & Frameworks
 
-**Languages**: JavaScript, Python, Java, Go, Rust, C#, Ruby, PHP, Swift, Kotlin, TypeScript
+**Languages**: JavaScript, TypeScript, Python, Java, Go, Rust, C#, Ruby, PHP, Swift, Kotlin
+(security scanning covers all of them; the code-quality linters cover
+JavaScript/TypeScript, Python, Java, Go, Ruby, and Swift)
 
 **Frameworks**: Express, Spring, Django, Rails, Laravel, ASP.NET, React, Vue, Angular
 
@@ -71,9 +73,9 @@ with:
 | Issue | Solution |
 |-------|----------|
 | No PR created | Verify `contents: write` and `pull-requests: write` in Settings → Actions → Workflow permissions |
-| AI fix failed | Verify the AI key secret (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) is set and valid |
+| AI fix failed | Verify the AI key secret (`ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` with `ai-provider: openai`) is set and valid |
 | Scan timeout | Large repo? Try `scan-level: 'critical-high'` to reduce findings |
-| No artifacts | Check Actions tab → workflow run → Artifacts section (90-day retention) |
+| No artifacts | Check Actions tab → workflow run → Artifacts section (30-day retention) |
 
 ## Support
 

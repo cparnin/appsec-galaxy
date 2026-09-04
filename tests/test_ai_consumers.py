@@ -631,3 +631,21 @@ def test_dependency_pr_body_reads_trivy_package_and_severity_keys():
     section = r._generate_dependency_health_section(findings)
     # Was always empty: no finding carried a 'package_name' key.
     assert "2 vulnerable packages" in section
+
+
+def test_requirements_txt_matches_pyproject_runtime_dependencies():
+    """The Action runner installs requirements.txt while everything else
+    installs the package; a package present in one and not the other means
+    CI and clients run different code."""
+    import re
+    root = Path(__file__).resolve().parent.parent
+    project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    def names(lines):
+        return {re.split(r"[<>=\[]", line)[0].strip().lower()
+                for line in lines if line.strip() and not line.strip().startswith("#")}
+
+    assert names(project["project"]["dependencies"]) == names(
+        (root / "requirements.txt").read_text(encoding="utf-8").splitlines())
+    # Test-only packages belong in the dev extra, not the runner's install.
+    assert "pytest" not in (root / "requirements.txt").read_text(encoding="utf-8")

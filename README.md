@@ -169,7 +169,7 @@ filters fail open so configuration errors do not hide findings.
 
 ## MCP
 
-The FastMCP server supports Claude Desktop & OpenAI Codex:
+The FastMCP server works with any MCP client (Codex, Claude Desktop, ChatGPT desktop):
 
 ```toml
 [mcp_servers.appsec-galaxy]
@@ -179,13 +179,13 @@ args = ["mcp/appsec_galaxy_mcp_server.py"]
 
 Set credentials in the server process environment; never embed them in MCP
 configuration. See [mcp/README.md](mcp/README.md) for tool, resource, and
-client setup details. Claude Desktop is supported as an optional compatible
-MCP client.
+client setup details.
 
 ## GitHub Action
 
-The reusable action accepts `ai-provider` (`anthropic` default, or `openai`),
-`anthropic-api-key`, `openai-api-key`, and optional `ai-model` inputs.
+The reusable action's inputs include `ai-provider` (`anthropic` default, or
+`openai`), the matching API key, `scan-level`, `auto-fix`, `ai-scan-tier`,
+and `fail-on-critical`; [action.yml](action.yml) documents all of them.
 The drop-in workflow is in [clients/security-scan.yml](clients/security-scan.yml),
 with setup instructions in [clients/SETUP.md](clients/SETUP.md).
 
@@ -194,7 +194,7 @@ with setup instructions in [clients/SETUP.md](clients/SETUP.md).
 ```bash
 .venv/bin/python -m ruff check src/ mcp/ scripts/ tests/
 .venv/bin/python -m mypy src/appsec_galaxy mcp scripts tests
-PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -v --tb=short
+PYTHON_DOTENV_DISABLED=1 .venv/bin/python -m pytest tests/ -q
 ```
 
 Architecture and security invariants are documented in

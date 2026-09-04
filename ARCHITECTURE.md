@@ -26,22 +26,31 @@ flowchart LR
 6. If enabled, the shared AI boundary validates or enriches results.
 7. Reports, SBOMs, and trend history are written under the repository output.
 8. Remediation may propose and apply safe single-line replacements before
-   creating a draft pull request.
+   creating a pull request.
 
 ## Package layout
 
 ```text
 src/appsec_galaxy/
-├── main.py                  # CLI and scan orchestration
+├── main.py                  # CLI, scan orchestration, finalize_scan pipeline
 ├── web_app.py               # local Flask interface
+├── config.py                # constants + pydantic-settings validation
+├── finding.py               # canonical Finding dataclass (scanner boundary)
 ├── scanners/                # security and quality scanner adapters
 ├── ai_cross_file.py         # optional semantic cross-file enrichment
 ├── cross_file_analyzer.py   # deterministic cross-file analysis
+├── enhanced_analyzer.py     # cross-file enhancement + report pipeline
+├── dependency_analyzer.py   # dependency code-path/reachability analysis
+├── package_registry.py      # registry lookups for dependency health
+├── vuln_intel.py            # EPSS / CISA-KEV enrichment and CVE priority
+├── sbom_generator.py        # CycloneDX + SPDX SBOMs (syft)
 ├── auto_remediation/        # safety checks, fixes, and PR workflow
 ├── reporting/               # HTML, SARIF, and summary generation
 ├── scan_filters.py          # baseline and diff filters
+├── scan_history.py          # trend history (new vs fixed per scan)
 ├── path_utils.py            # repository output paths and retention
-└── project_paths.py         # checkout resource locations
+├── project_paths.py         # checkout resource locations
+└── templates/index.html     # web UI (single file)
 ```
 
 Scanner configuration lives under `configs/`. The MCP server, CI gates, and
@@ -59,7 +68,10 @@ outputs/<repository>/
 ├── raw/
 │   ├── semgrep.json
 │   ├── gitleaks.json
-│   └── trivy-sca.json
+│   ├── trivy-sca.json
+│   ├── ai_scan.json            # when the AI scanner ran
+│   ├── pylint.json             # and other code-quality linters
+│   └── dependency-health.json
 ├── sbom/
 │   ├── sbom.cyclonedx.json
 │   └── sbom.spdx.json
@@ -92,9 +104,12 @@ Default depth mapping:
 
 | Depth | OpenAI | Anthropic | Max output tokens |
 | --- | --- | --- | ---: |
-| quick | `gpt-5.6-luna` | `claude-haiku-4-5` | 4096 |
-| standard | `gpt-5.6-terra` | `claude-sonnet-5` | 4096 |
-| deep | `gpt-5.6-sol` | `claude-opus-4-8` | 8192 |
+| quick | `gpt-5.6-luna` | `claude-haiku-4-5` | 8192 |
+| standard | `gpt-5.6-terra` | `claude-sonnet-5` | 16384 |
+| deep | `gpt-5.6-sol` | `claude-opus-4-8` | 32768 |
+
+`DEPTH_MODEL_MAP`, `DEPTH_MAX_TOKENS`, and `MODEL_PRICING` in
+`scanners/ai_scanner.py` are the source of truth for this table.
 
 ## Remediation boundary
 
@@ -137,14 +152,27 @@ fallback and finding normalization remain consistent.
 
 ## Security invariants
 
+This is the canonical list. `CLAUDE.md` and `AGENTS.md` summarize it for
+day-to-day work; when they disagree, this section wins.
+
 - Scanned files, filenames, scanner output, findings, and model output are
   untrusted.
-- Paths are resolved and checked against repository boundaries before access.
+- Paths are resolved and checked against repository boundaries before access;
+  symlinks out of the repository are never read.
+- Scanned-repository code never executes: subprocesses use argument arrays
+  with `shell=False`, linters run with bundled configuration rather than the
+  repository's own, the MCP scanner subprocess runs with Python's safe-path
+  flag, and lockfile regeneration disables install scripts.
 - Secrets are never persisted in configuration, logs, history, examples, or
-  MCP client settings.
+  MCP client settings, and raw secret output is never published as a CI
+  artifact.
 - XML from scanned repositories is parsed with hardened libraries.
-- HTML rendering autoescapes finding content.
-- Baseline/diff failures and AI verification failures never hide findings.
+- HTML rendering autoescapes finding content; the web UI builds DOM nodes
+  with `textContent` and uses no inline event handlers.
+- Baseline/diff failures and AI verification failures never hide findings; a
+  tool that fails is reported as a failure, never as zero findings.
+- Auto-remediation stages only the files it changed, is forced off on fork
+  pull requests, and reverts any fix that no longer parses.
 - Output stays local, ignored, and retention-controlled.
 - MCP initialization is offline; model access happens only in explicit AI
   features.

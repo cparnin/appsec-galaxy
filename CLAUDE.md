@@ -87,8 +87,8 @@ application security scanner: rule-based SAST, secrets, and dependency
 scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
-**Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (539 tests, ~7s). Personal project of cparnin; MIT licensed.
+**Codebase:** ~18,000 lines of Python (src, mcp, scripts) plus a pytest
+suite (595 tests, ~7s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
@@ -118,7 +118,9 @@ gates via `scripts/fail_on_critical.py` (`APPSEC_FAIL_THRESHOLD`).
 16 tools + 4 `appsec-galaxy://` resources for ChatGPT desktop, Codex, Claude
 Desktop, and other MCP clients. Import/initialization is offline: it must
 never construct an AI client or require a key. Credentials live in the
-server process environment only.
+server process environment only. The scanner subprocess runs with `-P`
+(safe path) so a scanned repo cannot shadow modules, and the default scan
+roots are `~/repos` and `~/projects` (never `~` or the server's cwd).
 
 ## AI Provider Boundary (the most important module contract)
 
@@ -167,7 +169,9 @@ retries (3 attempts, transient errors only), token/cost accounting, and
 
 ```
 src/appsec_galaxy/
-├── main.py                  # CLI orchestration, interactive menus, provider picker
+├── main.py                  # CLI orchestration, menus, provider picker,
+│                            #   finalize_scan (the one post-scan pipeline
+│                            #   used by CLI auto, CLI interactive, and web)
 ├── web_app.py               # Flask UI/API (X-API-Key auth optional, CORS opt-in)
 ├── config.py                # Hardcoded constants + pydantic-settings validation
 ├── cross_file_analyzer.py   # AST-based attack-chain engine (10+ languages)
@@ -252,6 +256,8 @@ a name-only grep when touching configuration.
 ## Security Invariants (summary; full list in AGENTS.md)
 
 - Untrusted everything: scanned repos, filenames, findings, model output.
+  Scanned-repo code never executes: linters use bundled configs (never the
+  repo's own, which can run code), and the MCP subprocess uses `-P`.
 - `shell=False` argument arrays; validate paths before subprocess/filesystem.
 - Baseline and diff filters fail open; AI verification failures preserve
   original findings; cross-file/report AI failures degrade to static output.

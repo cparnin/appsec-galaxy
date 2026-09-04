@@ -155,8 +155,36 @@ semantic versioning.
 - The exploit-intel cache moved out of a fixed shared temp path into the
   per-user cache directory.
 
+### Documentation
+
+- Corrected every claim the audit found stale: max output tokens in
+  `ARCHITECTURE.md` (4096/4096/8192 to 8192/16384/32768), "draft pull
+  request" (no PR is a draft), 90-day artifact retention in
+  `clients/SETUP.md` (30), the client workflow's "default settings" block
+  (it showed OpenAI wiring the workflow does not use), `mcp/README.md`
+  still presenting OpenAI as the default provider, the claim that the
+  repository ships `.codex/config.toml` (it is git-ignored), and the
+  suggestion that an MCP resource URI can take a path (the template
+  matches one segment).
+- `ARCHITECTURE.md` is now the canonical security-invariant list and
+  carries the complete package layout; `CLAUDE.md` and `AGENTS.md` point
+  to it. Gate commands live in `CLAUDE.md` alone, and the model/pricing
+  tables name `ai_scanner.py` as their source instead of repeating values.
+- `env.example` lost the dead `LOG_LEVEL` line, changelog-style commentary
+  about removed variables, wrong `src/` paths, and a
+  directory-browsing default that contradicted its own warning;
+  `APPSEC_AUTO_FIX_DELAY` is documented with its real default (0) and
+  meaning (between fixes, not before the first).
+- `docs/ROADMAP.md` is rewritten as a short historical record: every item
+  shipped, and it carried stale counts, a personal filesystem path, and
+  workflow rules that contradicted `CLAUDE.md`.
+
 ### Removed
 
+- `requirements-web.txt`, which nothing referenced (the `web` extra in
+  `pyproject.toml` covers it), and the test-only packages in
+  `requirements.txt`, which the Action runner installed on every client
+  run. A test now pins requirements.txt to pyproject's runtime list.
 - Dead SBOM code (`generate_sbom_formats`, the SPDX/CycloneDX converters,
   the Snyk enrichment block) and the redundant second dependency-manifest
   walk in the Trivy scanner.
