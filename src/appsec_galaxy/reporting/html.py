@@ -152,10 +152,14 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
             else:
                 sorted_results[tool] = tool_findings
 
-        # Count total findings and severity breakdown
+        # Count total findings and severity breakdown. Critical/high count
+        # security findings only (same formula as the executive tiles and the
+        # fallback summary text) so the numbers on one report always agree.
+        from appsec_galaxy.reporting.ai_summary import compute_summary_stats, risk_assessment
         total_findings = len(findings)
-        critical_count = 0
-        high_count = 0
+        summary_stats = compute_summary_stats(findings)
+        critical_count = summary_stats['critical']
+        high_count = summary_stats['high']
         cross_file_enhanced_count = 0
         attack_chains_count = 0
 
@@ -174,13 +178,6 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         max_business_impacts = 5 if is_large_scan else 8  # Expanded from 2->5, 3->8
 
         for finding in findings:
-            severity = (finding.get('extra', {}).get('severity') or
-                       finding.get('severity', '')).lower()
-            if severity == 'critical':
-                critical_count += 1
-            elif severity in ['high', 'error']:
-                high_count += 1
-
             # Extract cross-file analysis data from findings
             if finding.get('cross_file_analysis'):
                 cross_file_enhanced_count += 1
@@ -379,28 +376,15 @@ def generate_html_report(findings: list[dict[str, Any]], ai_summary: str, output
         ai_summary_html = _markdown_to_html(ai_summary) if ai_summary else ""
 
         # Structured stats for the executive summary tiles (rendered from
-        # real counts, not parsed out of the narrative text)
-        security = [f for f in findings if f.get('category') != 'code_quality']
+        # real counts, not parsed out of the narrative text); the badge uses
+        # the same risk formula as the fallback summary text.
+        risk_level, risk_label = risk_assessment(summary_stats)
         exec_stats: dict[str, Any] = {
-            'critical': critical_count,
-            'high': high_count,
-            'sast': len([f for f in security if f.get('tool') == 'semgrep']),
-            'secrets': len([f for f in security if f.get('tool') == 'gitleaks']),
-            'deps': len([f for f in security if f.get('tool') == 'trivy'
-                         and f.get('finding_type') != 'misconfiguration']),
-            'misconfigs': len([f for f in security if f.get('finding_type') == 'misconfiguration']),
-            'code_quality': len([f for f in findings if f.get('category') == 'code_quality']),
-            'kev': len([f for f in findings if f.get('in_kev')]),
+            **summary_stats,
+            'code_quality': summary_stats['total_code_quality'],
+            'risk_level': risk_level,
+            'risk_label': risk_label,
         }
-        if critical_count > 0 or exec_stats['secrets'] > 0:
-            exec_stats['risk_level'] = 'high'
-            exec_stats['risk_label'] = 'High Risk'
-        elif high_count > 0:
-            exec_stats['risk_level'] = 'medium'
-            exec_stats['risk_label'] = 'Medium Risk'
-        else:
-            exec_stats['risk_level'] = 'low'
-            exec_stats['risk_label'] = 'Low Risk'
 
         # See justification at the Environment() construction above:
         # autoescape is enabled; ai_summary is pre-escaped HTML marked safe in the template.

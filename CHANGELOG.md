@@ -61,6 +61,25 @@ semantic versioning.
   repository; it now stops with the explicit error naming the cause.
 - `run_tests.sh` runs the whole suite instead of a single file, matching
   the CI gate (it silently skipped the two AI test modules).
+- Gitleaks no longer reports every SHA-1 hash as a Sourcegraph token. The
+  upstream `sourcegraph-access-token` rule (inherited since the ruleset
+  extension above) accepts any bare 40-hex string when a file mentions
+  "sourcegraph", which turned one repository's committed-then-deleted SBOM
+  files into 610 false "secrets" from git history. The bundled config now
+  overrides that rule id with a regex that requires the real `sgp_` token
+  prefixes; verified against the real binary (636 to 26 on that repo, the
+  remaining 26 being example keys in docs and test fixtures).
+- Executive summary numbers now agree with each other. The HTML report's
+  Critical/High tiles and the "manual hours" estimate counted code quality
+  findings (a pylint "error" showed as a high-severity security issue,
+  4 in the tile vs 1 in the text), and the risk badge used a different
+  formula from the summary text (High Risk badge above a Medium Risk
+  line). `compute_summary_stats()` / `risk_assessment()` /
+  `build_fallback_summary()` in `reporting/ai_summary.py` are now the one
+  source for the tiles, the badge, and the fallback summary text, which
+  was previously pasted into `main.py` twice and `web_app.py` once.
+  Critical/High count security findings only; any critical finding or
+  any detected secret is High Risk, any high finding is Medium.
 - The web server picks up a provider key rotated in `.env` without a
   restart. It loaded `.env` once at startup, so replacing a revoked
   `ANTHROPIC_API_KEY` kept failing the pre-scan connection test with

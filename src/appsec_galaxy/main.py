@@ -79,6 +79,7 @@ from appsec_galaxy.scanners.trivy import run_trivy_scan         # Software Compo
 from appsec_galaxy.scanners.validation import detect_languages  # Language detection for code quality linters
 from appsec_galaxy.scanners.ai_scanner import run_ai_scan       # AI-native vulnerability detection
 from appsec_galaxy.reporting.html import generate_html_report  # Pretty HTML reports for detailed review
+from appsec_galaxy.reporting.ai_summary import build_fallback_summary
 
 # Import code quality linters (graceful fallback if not installed)
 try:
@@ -930,54 +931,9 @@ def run_auto_mode() -> list[dict[str, Any]]:
         try:
             # Generate AI summary with cross-file insights
             if enhanced_findings:
-                # Separate security from code quality findings
-                security_findings = [f for f in enhanced_findings if f.get('extra', {}).get('metadata', {}).get('category') != 'code_quality']
-                code_quality_findings = [f for f in enhanced_findings if f.get('extra', {}).get('metadata', {}).get('category') == 'code_quality']
-
-                summary_stats = {
-                    'total_security': len(security_findings),
-                    'total_code_quality': len(code_quality_findings),
-                    'critical': len([f for f in security_findings if f.get('severity', '').lower() == 'critical']),
-                    'high': len([f for f in security_findings if f.get('severity', '').lower() in ['high', 'error']]),
-                    'sast': len([f for f in security_findings if f.get('tool') == 'semgrep']),
-                    'secrets': len([f for f in security_findings if f.get('tool') == 'gitleaks']),
-                    'deps': len([f for f in security_findings if f.get('tool') == 'trivy'
-                                 and f.get('finding_type') != 'misconfiguration']),
-                    'misconfigs': len([f for f in security_findings
-                                       if f.get('finding_type') == 'misconfiguration'])
-                }
-
-                # Build security findings section
-                security_breakdown = f"""**Security Issues ({summary_stats['total_security']} total):**
-• {summary_stats['critical']} critical vulnerabilities requiring immediate attention
-• {summary_stats['high']} high-severity issues needing prompt remediation
-• {summary_stats['sast']} code security issues (SAST)
-• {summary_stats['secrets']} secrets detected in repository
-• {summary_stats['deps']} vulnerable dependencies identified
-• {summary_stats['misconfigs']} IaC/config misconfigurations detected"""
-
-                # Add code quality section if present
-                code_quality_section = ""
-                if summary_stats['total_code_quality'] > 0:
-                    code_quality_section = f"""
-
-**Code Quality Issues ({summary_stats['total_code_quality']} total):**
-• Maintainability, complexity, and best practice violations
-• Always shown regardless of security scan level"""
-
-                ai_summary = f"""🛡️ Security Analysis Complete
-
-**Risk Assessment:** {'🔴 High Risk' if summary_stats['critical'] > 0 else '🟡 Medium Risk' if summary_stats['high'] > 0 else '🟢 Low Risk'}
-
-{security_breakdown}{code_quality_section}{context_summary}
-
-**Recommended Actions:**
-1. Prioritize critical vulnerabilities for immediate patching
-2. Review and rotate any exposed secrets
-3. Update vulnerable dependencies to latest secure versions
-4. Implement security code review practices"""
+                ai_summary = build_fallback_summary(enhanced_findings, context_summary)
             else:
-                ai_summary = "🎉 Security scan completed successfully with no critical or high-severity issues found."
+                ai_summary = build_fallback_summary([])
 
             generate_html_report(enhanced_findings, ai_summary, str(output_dir), str(repo_path), detect_languages(Path(repo_path)), dep_health_data=dep_health_report)
             html_report_path = output_dir / "report.html"
@@ -1639,57 +1595,9 @@ def main(argv: list[str] | None = None) -> None:
 
                 # Generate AI summary with cross-file insights
                 if enhanced_findings:
-                    # Separate security from code quality findings
-                    security_findings = [f for f in enhanced_findings if f.get('extra', {}).get('metadata', {}).get('category') != 'code_quality']
-                    code_quality_findings = [f for f in enhanced_findings if f.get('extra', {}).get('metadata', {}).get('category') == 'code_quality']
-
-                    summary_stats = {
-                        'total_security': len(security_findings),
-                        'total_code_quality': len(code_quality_findings),
-                        'critical': len([f for f in security_findings if f.get('severity', '').lower() == 'critical']),
-                        'high': len([f for f in security_findings if f.get('severity', '').lower() in ['high', 'error']]),
-                        'sast': len([f for f in security_findings if f.get('tool') == 'semgrep']),
-                        'secrets': len([f for f in security_findings if f.get('tool') == 'gitleaks']),
-                        # Trivy reports both dependency CVEs and IaC misconfigurations.
-                        # Excluding misconfigs here keeps 'deps' meaning "vulnerable
-                        # dependencies" and matches the auto/CI-mode summary exactly.
-                        'deps': len([f for f in security_findings if f.get('tool') == 'trivy'
-                                     and f.get('finding_type') != 'misconfiguration']),
-                        'misconfigs': len([f for f in security_findings
-                                           if f.get('finding_type') == 'misconfiguration'])
-                    }
-
-                    # Build security findings section
-                    security_breakdown = f"""**Security Issues ({summary_stats['total_security']} total):**
-• {summary_stats['critical']} critical vulnerabilities requiring immediate attention
-• {summary_stats['high']} high-severity issues needing prompt remediation
-• {summary_stats['sast']} code security issues (SAST)
-• {summary_stats['secrets']} secrets detected in repository
-• {summary_stats['deps']} vulnerable dependencies identified
-• {summary_stats['misconfigs']} IaC/config misconfigurations detected"""
-
-                    # Add code quality section if present
-                    code_quality_section = ""
-                    if summary_stats['total_code_quality'] > 0:
-                        code_quality_section = f"""
-
-**Code Quality Issues ({summary_stats['total_code_quality']} total):**
-• Maintainability, complexity, and best practice violations
-• Always shown regardless of security scan level"""
-
-                    ai_summary = f"""🛡️ Security Analysis Complete
-
-**Risk Assessment:** {'🔴 High Risk' if summary_stats['critical'] > 0 else '🟡 Medium Risk' if summary_stats['high'] > 0 else '🟢 Low Risk'}
-
-{security_breakdown}{code_quality_section}{context_summary}
-
-**Recommended Actions:**
-1. Prioritize critical vulnerabilities for immediate patching
-2. Review and rotate any exposed secrets
-3. Update vulnerable dependencies to latest secure versions
-4. Implement security code review practices"""
+                    ai_summary = build_fallback_summary(enhanced_findings, context_summary)
                 else:
-                    ai_summary = "🎉 Security scan completed successfully with no critical or high-severity issues found."
+                    ai_summary = build_fallback_summary([])
 
                 try:
                     generate_html_report(enhanced_findings, ai_summary, str(output_dir), str(repo_path), detect_languages(Path(repo_path)), dep_health_data=dep_health_report_interactive)

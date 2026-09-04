@@ -32,6 +32,18 @@ regexes = [
   '''(?i)["']your-[a-z0-9-]+-here["']''',
 ]
 
+# Override of the upstream rule of the same id. Upstream's regex accepts a
+# bare 40-hex string as a Sourcegraph token whenever the file mentions
+# "sourcegraph", so any SBOM, lockfile, or commit list with SHA-1 hashes
+# produces hundreds of false positives (610 on one repo's git history).
+# Same id so the upstream rule is replaced, not duplicated; the real
+# token shapes (sgp_ prefix) are still detected.
+[[rules]]
+id = "sourcegraph-access-token"
+description = "Sourcegraph access token"
+regex = '''(?i)\b(sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}|sgp_[a-fA-F0-9]{40})\b'''
+keywords = ["sgp_"]
+
 [[rules]]
 id = "aws-access-key"
 description = "AWS Access Key"

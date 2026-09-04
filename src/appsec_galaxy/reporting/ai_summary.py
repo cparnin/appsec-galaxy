@@ -25,6 +25,92 @@ MAX_SUMMARY_TOKENS = 2048
 SUMMARY_TIMEOUT_SECONDS = 30
 
 
+# ---------------------------------------------------------------------------
+# Summary statistics shared by the HTML report tiles, the risk badge, and the
+# rule-based fallback summary (CLI auto mode, CLI interactive mode, web).
+# One formula so the numbers on a report can never disagree with each other.
+# ---------------------------------------------------------------------------
+
+def is_code_quality(finding: dict[str, Any]) -> bool:
+    """Linter findings carry category at the top level and, for older
+    payloads, under extra.metadata; accept either."""
+    if finding.get('category') == 'code_quality':
+        return True
+    return (finding.get('extra') or {}).get('metadata', {}).get('category') == 'code_quality'
+
+
+def compute_summary_stats(findings: list[dict[str, Any]]) -> dict[str, int]:
+    """Count findings by class. Critical/high count SECURITY findings only:
+    code quality has its own bucket, and a pylint "error" (likely bug) is
+    not a high-severity security issue."""
+    security = [f for f in findings if not is_code_quality(f)]
+
+    def _sev(f: dict[str, Any]) -> str:
+        return str((f.get('extra') or {}).get('severity') or f.get('severity') or '').lower()
+
+    return {
+        'total_security': len(security),
+        'total_code_quality': len(findings) - len(security),
+        'critical': sum(1 for f in security if _sev(f) == 'critical'),
+        'high': sum(1 for f in security if _sev(f) in ('high', 'error')),
+        'sast': sum(1 for f in security if f.get('tool') == 'semgrep'),
+        'secrets': sum(1 for f in security if f.get('tool') == 'gitleaks'),
+        'deps': sum(1 for f in security
+                    if f.get('tool') == 'trivy' and f.get('finding_type') != 'misconfiguration'),
+        'misconfigs': sum(1 for f in security if f.get('finding_type') == 'misconfiguration'),
+        'kev': sum(1 for f in security if f.get('in_kev')),
+    }
+
+
+def risk_assessment(stats: dict[str, int]) -> tuple[str, str]:
+    """(level, label): any critical or any detected secret is High Risk; a
+    high-severity finding is Medium; otherwise Low."""
+    if stats['critical'] > 0 or stats['secrets'] > 0:
+        return 'high', 'High Risk'
+    if stats['high'] > 0:
+        return 'medium', 'Medium Risk'
+    return 'low', 'Low Risk'
+
+
+_RISK_GLYPH = {'high': '🔴', 'medium': '🟡', 'low': '🟢'}
+
+
+def build_fallback_summary(findings: list[dict[str, Any]], context_summary: str = '') -> str:
+    """Rule-based executive summary used when no AI summary is generated."""
+    if not findings:
+        return "🎉 Security scan completed successfully with no critical or high-severity issues found."
+    stats = compute_summary_stats(findings)
+    level, label = risk_assessment(stats)
+
+    security_breakdown = f"""**Security Issues ({stats['total_security']} total):**
+• {stats['critical']} critical vulnerabilities requiring immediate attention
+• {stats['high']} high-severity issues needing prompt remediation
+• {stats['sast']} code security issues (SAST)
+• {stats['secrets']} secrets detected in repository
+• {stats['deps']} vulnerable dependencies identified
+• {stats['misconfigs']} IaC/config misconfigurations detected"""
+
+    code_quality_section = ""
+    if stats['total_code_quality'] > 0:
+        code_quality_section = f"""
+
+**Code Quality Issues ({stats['total_code_quality']} total):**
+• Maintainability, complexity, and best practice violations
+• Always shown regardless of security scan level"""
+
+    return f"""🛡️ Security Analysis Complete
+
+**Risk Assessment:** {_RISK_GLYPH[level]} {label}
+
+{security_breakdown}{code_quality_section}{context_summary}
+
+**Recommended Actions:**
+1. Prioritize critical vulnerabilities for immediate patching
+2. Review and rotate any exposed secrets
+3. Update vulnerable dependencies to latest secure versions
+4. Implement security code review practices"""
+
+
 def _markdown_to_html(text: str) -> str:
     """Convert lightweight markdown to safe HTML for the report template.
 

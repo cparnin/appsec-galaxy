@@ -88,7 +88,7 @@ scanning plus optional AI analysis that finds logic flaws, auth bypasses,
 race conditions, and cross-file attack chains that rules cannot.
 
 **Codebase:** ~19,000 lines of Python (src, mcp, scripts) plus a pytest
-suite (526 tests, ~7s). Personal project of cparnin; MIT licensed.
+suite (538 tests, ~7s). Personal project of cparnin; MIT licensed.
 
 ## Deployment Modes (all share the same scanner core)
 
@@ -181,6 +181,9 @@ src/appsec_galaxy/
 ├── scanners/                # semgrep, gitleaks, trivy (deps + IaC misconfig), ai_scanner, linters
 ├── auto_remediation/        # one-line AI fixes + PR creation (remediation.py)
 ├── reporting/               # html.py, sarif.py, ai_summary.py + templates
+│                            #   (ai_summary.py also owns compute_summary_stats /
+│                            #    risk_assessment / build_fallback_summary: the
+│                            #    single source for tile, badge, and summary numbers)
 └── templates/index.html     # web UI (single file, inline CSS/JS)
 
 mcp/appsec_galaxy_mcp_server.py   # FastMCP server + AppSecGalaxyMCPCore
@@ -266,6 +269,11 @@ a name-only grep when touching configuration.
   Same-repo PRs and pushes are trusted and auto-fix normally.
 - Fake-secret fixtures need suppression in BOTH `.gitleaksignore`
   (fingerprints, for raw gitleaks) and `.appsec-galaxy-ignore` (app baseline).
+- Gitleaks scans full git history (deleted files included). To fix a noisy
+  upstream rule, redefine it in `configs/.gitleaks.toml` under the SAME id
+  (the override replaces upstream's rule); never add a path allowlist
+  there, it applies to scanned repos. `sourcegraph-access-token` is
+  overridden this way because upstream's regex matches bare SHA-1 hashes.
 - Never log secret values anywhere, including examples and test fixtures.
 - Gitleaks secret values stop at the `Finding` boundary:
   `Finding.from_gitleaks` strips `Secret`/`Match`, so no in-memory finding,

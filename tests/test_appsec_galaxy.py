@@ -15,6 +15,7 @@ import codecs
 import json
 import re
 import subprocess
+import shutil
 import os
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -86,6 +87,50 @@ def test_gitleaks_config_extends_upstream_ruleset():
     # allowlist here would hide real secrets in someone else's repository.
     # Repo-local noise belongs in this repo's .gitleaksignore instead.
     assert "outputs/" not in config
+
+
+def test_gitleaks_sourcegraph_rule_requires_token_prefix():
+    """Regression: upstream's sourcegraph-access-token regex accepts any bare
+    40-hex string, so SBOMs and lockfiles full of SHA-1 hashes produced 610
+    false "secrets" on one repo's git history. The bundled override keeps
+    the rule id (replacing upstream's rule, not adding a second one) and
+    only matches the real sgp_ token shapes."""
+    import re as _re
+    checkout_root = Path(__file__).resolve().parent.parent
+    config = tomllib.loads((checkout_root / "configs" / ".gitleaks.toml").read_text())
+    rules = [r for r in config["rules"] if r["id"] == "sourcegraph-access-token"]
+    assert len(rules) == 1
+    pattern = _re.compile(rules[0]["regex"])
+    sha1 = "a" * 40
+    assert not pattern.search(f'"hash": "{sha1}"')
+    assert not pattern.search(f'sourcegraph {sha1} ')
+    assert pattern.search(f'token = "sgp_{"b" * 16}_{sha1}"')
+    assert pattern.search(f'token = "sgp_local_{sha1}"')
+    assert pattern.search(f'token = "sgp_{sha1}"')
+
+
+@pytest.mark.skipif(shutil.which("gitleaks") is None, reason="gitleaks binary not installed")
+def test_gitleaks_binary_ignores_bare_sha1_but_catches_sourcegraph_token(tmp_path):
+    """End to end through the real binary: the override must actually replace
+    the upstream rule when the config is applied via [extend]."""
+    import json as _json
+    checkout_root = Path(__file__).resolve().parent.parent
+    sha1 = "0123456789abcdef0123456789abcdef01234567"
+    (tmp_path / "sbom.json").write_text(
+        '{"name": "sourcegraph-client", "hashes": [{"alg": "SHA-1", "content": "%s"}]}\n' % sha1
+    )
+    (tmp_path / "settings.py").write_text('SG_TOKEN = "sgp_fedcba9876543210_%s"\n' % sha1)
+    report = tmp_path / "gl.json"
+    subprocess.run(
+        ["gitleaks", "detect", "--no-git", "--source", str(tmp_path),
+         "--config", str(checkout_root / "configs" / ".gitleaks.toml"),
+         "--report-format", "json", "--report-path", str(report),
+         "--no-banner", "--exit-code", "0"],
+        check=True, capture_output=True, timeout=60,
+    )
+    hits = _json.loads(report.read_text()) if report.exists() else []
+    by_file = {Path(h["File"]).name for h in hits if h["RuleID"] == "sourcegraph-access-token"}
+    assert by_file == {"settings.py"}
 
 
 def test_web_images_route_serves_checkout_asset():
@@ -5054,6 +5099,98 @@ class TestExecSummaryRedesign:
              'Description': 'AWS key', 'category': 'security'},
         ])
         assert 'risk-badge risk-high' in html_out
+
+    def test_high_tile_excludes_code_quality_errors(self, tmp_path):
+        """Regression: pylint "error" findings were counted into the HIGH
+        tile (4) while the summary text counted security only (1)."""
+        import re
+        findings = [
+            {'tool': 'semgrep', 'check_id': 'x', 'path': 'a.py', 'severity': 'high',
+             'start': {'line': 1}, 'extra': {'message': 'x'}, 'category': 'security'},
+        ] + [
+            {'tool': 'pylint', 'check_id': f'E{i}', 'path': 'b.py', 'severity': 'high',
+             'start': {'line': i}, 'extra': {'message': 'bug', 'severity': 'error',
+                                             'metadata': {'category': 'code_quality'}},
+             'category': 'code_quality'}
+            for i in range(3)
+        ]
+        html_out = self._generate(tmp_path, findings)
+        high = re.search(r'<div class="num">(\d+)</div>\s*<div class="label">High</div>', html_out)
+        assert high and high.group(1) == '1'
+        cq = re.search(r'<div class="num">(\d+)</div>\s*<div class="label">Code Quality</div>', html_out)
+        assert cq and cq.group(1) == '3'
+
+    def test_badge_and_fallback_text_agree_on_risk(self, tmp_path):
+        """Regression: badge said High Risk (secrets rule) while the fallback
+        text said Medium Risk (critical-only rule) on the same report."""
+        from appsec_galaxy.reporting.ai_summary import build_fallback_summary
+        findings = [
+            {'tool': 'gitleaks', 'RuleID': 'aws-key', 'File': 'c.py', 'StartLine': 1,
+             'Description': 'AWS key', 'category': 'security'},
+            {'tool': 'semgrep', 'check_id': 'x', 'path': 'a.py', 'severity': 'high',
+             'start': {'line': 1}, 'extra': {'message': 'x'}, 'category': 'security'},
+        ]
+        text = build_fallback_summary(findings)
+        html_out = self._generate(tmp_path, findings, summary=text)
+        assert 'risk-badge risk-high' in html_out
+        assert 'High Risk' in text and 'Medium Risk' not in text
+        assert '1 high-severity issues' in text
+        assert '1 secrets detected' in text
+
+
+class TestSummaryStats:
+    """compute_summary_stats / risk_assessment are the single source of truth
+    for every number on the executive summary."""
+
+    def test_counts_security_only_for_severity_buckets(self):
+        from appsec_galaxy.reporting.ai_summary import compute_summary_stats
+        stats = compute_summary_stats([
+            {'tool': 'semgrep', 'severity': 'critical', 'category': 'security'},
+            {'tool': 'semgrep', 'severity': 'HIGH', 'category': 'security'},
+            {'tool': 'trivy', 'severity': 'high', 'finding_type': 'misconfiguration', 'category': 'security'},
+            {'tool': 'trivy', 'severity': 'critical', 'in_kev': True, 'category': 'security'},
+            {'tool': 'gitleaks', 'category': 'security'},
+            {'tool': 'pylint', 'severity': 'high', 'extra': {'severity': 'error'}, 'category': 'code_quality'},
+            {'tool': 'eslint', 'severity': 'critical',
+             'extra': {'metadata': {'category': 'code_quality'}}},
+        ])
+        assert stats == {
+            'total_security': 5, 'total_code_quality': 2,
+            'critical': 2, 'high': 2, 'sast': 2, 'secrets': 1,
+            'deps': 1, 'misconfigs': 1, 'kev': 1,
+        }
+
+    @pytest.mark.parametrize("stats, expected", [
+        ({'critical': 1, 'high': 0, 'secrets': 0}, ('high', 'High Risk')),
+        ({'critical': 0, 'high': 0, 'secrets': 1}, ('high', 'High Risk')),
+        ({'critical': 0, 'high': 3, 'secrets': 0}, ('medium', 'Medium Risk')),
+        ({'critical': 0, 'high': 0, 'secrets': 0}, ('low', 'Low Risk')),
+    ])
+    def test_risk_assessment(self, stats, expected):
+        from appsec_galaxy.reporting.ai_summary import risk_assessment
+        assert risk_assessment(stats) == expected
+
+    def test_fallback_summary_for_no_findings(self):
+        from appsec_galaxy.reporting.ai_summary import build_fallback_summary
+        assert 'no critical or high-severity issues' in build_fallback_summary([])
+
+    def test_fallback_summary_includes_context_and_code_quality_section(self):
+        from appsec_galaxy.reporting.ai_summary import build_fallback_summary
+        text = build_fallback_summary(
+            [{'tool': 'pylint', 'severity': 'low', 'category': 'code_quality'}],
+            context_summary='\n\nCONTEXT-MARKER',
+        )
+        assert 'Code Quality Issues (1 total)' in text
+        assert 'CONTEXT-MARKER' in text
+        assert 'Low Risk' in text
+
+    def test_no_inline_copies_of_the_fallback_summary_remain(self):
+        """The summary text used to be pasted into main.py twice and web_app.py
+        once, each with its own risk formula. Only ai_summary.py may own it."""
+        root = Path(__file__).resolve().parent.parent / 'src' / 'appsec_galaxy'
+        owners = [p for p in root.rglob('*.py')
+                  if 'high-severity issues needing prompt remediation' in p.read_text()]
+        assert [p.name for p in owners] == ['ai_summary.py']
 
 
 class TestSummaryTopicSections:

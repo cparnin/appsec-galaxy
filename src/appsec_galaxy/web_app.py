@@ -33,6 +33,7 @@ from appsec_galaxy.main import (
     track_usage
 )
 from appsec_galaxy.reporting.html import generate_html_report
+from appsec_galaxy.reporting.ai_summary import build_fallback_summary
 
 # Import path utilities for multi-repo output structure
 from appsec_galaxy.path_utils import (
@@ -403,52 +404,7 @@ def scan_repository():
             # Generate reports using existing functions
             html_report_path = None
             if enhanced_findings:
-                # Separate security from code quality findings
-                security_findings = [f for f in enhanced_findings if f.get('extra', {}).get('metadata', {}).get('category') != 'code_quality']
-                code_quality_findings = [f for f in enhanced_findings if f.get('extra', {}).get('metadata', {}).get('category') == 'code_quality']
-
-                summary_stats = {
-                    'total_security': len(security_findings),
-                    'total_code_quality': len(code_quality_findings),
-                    'critical': len([f for f in security_findings if f.get('severity', '').lower() == 'critical']),
-                    'high': len([f for f in security_findings if f.get('severity', '').lower() in ['high', 'error']]),
-                    'sast': len([f for f in security_findings if f.get('tool') == 'semgrep']),
-                    'secrets': len([f for f in security_findings if f.get('tool') == 'gitleaks']),
-                    'deps': len([f for f in security_findings if f.get('tool') == 'trivy'
-                                 and f.get('finding_type') != 'misconfiguration']),
-                    'misconfigs': len([f for f in security_findings
-                                       if f.get('finding_type') == 'misconfiguration'])
-                }
-
-                # Build security findings section
-                security_breakdown = f"""**Security Issues ({summary_stats['total_security']} total):**
-• {summary_stats['critical']} critical vulnerabilities requiring immediate attention
-• {summary_stats['high']} high-severity issues needing prompt remediation
-• {summary_stats['sast']} code security issues (SAST)
-• {summary_stats['secrets']} secrets detected in repository
-• {summary_stats['deps']} vulnerable dependencies identified
-• {summary_stats['misconfigs']} IaC/config misconfigurations detected"""
-
-                # Add code quality section if present
-                code_quality_section = ""
-                if summary_stats['total_code_quality'] > 0:
-                    code_quality_section = f"""
-
-**Code Quality Issues ({summary_stats['total_code_quality']} total):**
-• Maintainability, complexity, and best practice violations
-• Always shown regardless of security scan level"""
-
-                ai_summary = f"""🛡️ Security Analysis Complete
-
-**Risk Assessment:** {'🔴 High Risk' if summary_stats['critical'] > 0 else '🟡 Medium Risk' if summary_stats['high'] > 0 else '🟢 Low Risk'}
-
-{security_breakdown}{code_quality_section}
-
-**Recommended Actions:**
-1. Prioritize critical vulnerabilities for immediate patching
-2. Review and rotate any exposed secrets
-3. Update vulnerable dependencies to latest secure versions
-4. Implement security code review practices"""
+                ai_summary = build_fallback_summary(enhanced_findings)
 
                 # Run dependency code-path analysis
                 dep_health_data_web = None
